@@ -1,6 +1,7 @@
 #!/usr/bin/env -S deno run --allow-all
 // Bandwidth allocation end-to-end, with the bridge's budget capped (--max-bandwidth-bytes-per-sec):
-// streams shrink by the same fraction, and the quality/Hz tradeoff of a transcoded (H.264) stream.
+// streams flex-shrink by bandwidthPriority (equal weights equally, weight 0 last), and the quality/Hz
+// tradeoff of a transcoded (H.264) stream.
 // Usage: deno run --allow-all test/allocation.js
 
 import { $ } from "https://esm.sh/dax-sh@0.42.0"
@@ -30,12 +31,11 @@ try {
     const browser = await launchBrowser()
     const page = await browser.newPage(`${rawBridge.url}/test/blank.html`)
 
-    $.logStep(`equal shrink: budget ${rawBudget} B/s for 3 x 400 KB/s`)
-    const raw = await page.evaluate(async (bridgeUrl) => {
+    /** Three 400 KB/s streams with these subscribe options, measured under the capped budget. */
+    const measureRaw = (streams) => page.evaluate(async (bridgeUrl, streams) => {
         const { connect } = await import("/client/zenoh_web.js")
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
         const client = await connect(bridgeUrl)
-        const streams = { a: { maxHz: 20 }, b: { maxHz: 20 }, c: { maxHz: 20 } }
         const counts = { a: 0, b: 0, c: 0 }
         const bytes = { a: 0, b: 0, c: 0 }
         let measuring = false
@@ -60,8 +60,12 @@ try {
             bandwidth: client.bridgeStats?.bandwidth,
         }
         client.close()
+        await sleep(500)
         return result
-    }, { args: [rawBridge.url] })
+    }, { args: [rawBridge.url, streams] })
+
+    $.logStep(`equal shrink: budget ${rawBudget} B/s for 3 x 400 KB/s`)
+    const raw = await measureRaw({ a: { maxHz: 20 }, b: { maxHz: 20 }, c: { maxHz: 20 } })
     console.log(JSON.stringify(raw, null, 1))
     const { hz, allocation } = raw
     // 480 KB/s over three streams wanting 400 KB/s each: 160 KB/s = 8 Hz of 20 KB messages apiece
@@ -70,6 +74,20 @@ try {
         `stats show each stream shrunk by the same fraction (${Object.values(allocation).map((stream) => stream?.hzFraction?.toFixed(2)).join(", ")})`)
     check(raw.bandwidth?.budgetBytesPerSec === rawBudget && raw.bandwidth?.capBytesPerSec === rawBudget && raw.bandwidth?.constrained === true, `frontend budget is the cap (${JSON.stringify(raw.bandwidth)})`)
     check(raw.bytesPerSec <= rawBudget * 1.1, `delivered payload stays within the budget (${raw.bytesPerSec.toFixed(0)} B/s <= ${rawBudget} + 10%)`)
+
+    $.logStep("unequal shrink: bandwidthPriority 0.1 / 10 / 10")
+    const weighted = await measureRaw({ a: { bandwidthPriority: 0.1, maxHz: 20 }, b: { bandwidthPriority: 10, maxHz: 20 }, c: { bandwidthPriority: 10, maxHz: 20 } })
+    console.log(JSON.stringify(weighted.hz))
+    // the 720 KB/s deficit splits 1 : 100 : 100, so a keeps ~19.8 Hz and b, c fall to ~2.1 Hz
+    check(weighted.hz.a >= 17 && weighted.hz.b <= 3.5 && weighted.hz.c <= 3.5,
+        `the low-weight stream keeps its rate, the high-weight ones shrink (a ${weighted.hz.a.toFixed(2)}, b ${weighted.hz.b.toFixed(2)}, c ${weighted.hz.c.toFixed(2)} Hz; allocation a ${weighted.allocation.a?.hz?.toFixed(2)}, b ${weighted.allocation.b?.hz?.toFixed(2)} Hz)`)
+
+    $.logStep("weight 0 shrinks last: bandwidthPriority 0 / 1 / 1")
+    const lastToShrink = await measureRaw({ a: { bandwidthPriority: 0, maxHz: 20 }, b: { maxHz: 20 }, c: { maxHz: 20 } })
+    console.log(JSON.stringify(lastToShrink.hz))
+    // b and c cover the whole deficit (360 KB/s each, down to ~2 Hz); a is untouched
+    check(lastToShrink.hz.a >= 18 && lastToShrink.hz.b <= 3.5 && lastToShrink.hz.c <= 3.5 && lastToShrink.allocation.a?.constrained === false,
+        `a weight-0 stream is not shrunk while others can be (a ${lastToShrink.hz.a.toFixed(2)}, b ${lastToShrink.hz.b.toFixed(2)}, c ${lastToShrink.hz.c.toFixed(2)} Hz)`)
 
     $.logStep(`quality/Hz tradeoff: one H.264 stream wanting ~29 KB/s, budget ${videoBudget} B/s`)
     await page.goto(`${videoBridge.url}/test/blank.html`)
@@ -125,38 +143,6 @@ try {
     check(keepQuality.allocation?.constrained && keepHz.allocation?.constrained && keepQuality.allocation.quality > keepHz.allocation.quality && keepQuality.allocation.hz < keepHz.allocation.hz,
         `allocations: tradeoff 0 -> q ${keepQuality.allocation?.quality} @ ${keepQuality.allocation?.hz?.toFixed(1)} Hz, tradeoff 1 -> q ${keepHz.allocation?.quality} @ ${keepHz.allocation?.hz?.toFixed(1)} Hz`)
 
-    $.logStep(`jpeg files on the data channel, same stream and budget ${videoBudget} B/s`)
-    const jpegStream = await page.evaluate(async (bridgeUrl, key) => {
-        const { connect } = await import("/client/zenoh_web.js")
-        const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-        const client = await connect(bridgeUrl)
-        let measuring = false
-        let images = 0
-        let bytes = 0
-        const widths = new Set()
-        const subscription = client.subscribe(key, { codec: "dimos-image", imageTransport: "jpeg", maxHz: 20, minQuality: 0.2 }, (message) => {
-            if (measuring) {
-                images++
-                bytes += message.bytes.length
-                widths.add(message.image?.width)
-            }
-            message.image?.close()
-        })
-        await subscription.ready()
-        await sleep(4000)
-        measuring = true
-        const seconds = 5
-        await sleep(seconds * 1000)
-        measuring = false
-        await client.pollStats()
-        const result = { hz: images / seconds, bytesPerSec: bytes / seconds, widths: [...widths], allocation: subscription.bridgeStats?.allocation, stats: subscription.bridgeStats?.stats }
-        client.close()
-        await sleep(500)
-        return result
-    }, { args: [videoBridge.url, videoKey] })
-    console.log(JSON.stringify(jpegStream, null, 1))
-    check(jpegStream.allocation?.constrained && jpegStream.allocation.quality < 1 && jpegStream.bytesPerSec <= videoBudget * 1.15 && jpegStream.hz > 0,
-        `jpeg: priced by measured JPEG sizes and held within the budget (${jpegStream.bytesPerSec.toFixed(0)} B/s <= ${videoBudget} + 15%, ${jpegStream.hz.toFixed(1)} Hz, quality ${jpegStream.allocation?.quality}, widths ${jpegStream.widths})`)
 } catch (error) {
     check(false, String(error))
     console.error(error)

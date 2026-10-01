@@ -38,8 +38,8 @@
                     cargoDeps = rustPlatform.importCargoLock {
                         lockFile = ./Cargo.lock;
                         outputHashes = {
-                            "zenoh-web-0.3.0" = "sha256-pPUWO5/8w3j+IycQwYNTYK4F04OJZHM/ECklrg5TIXU=";
-                            "zenoh-dimos-codecs-0.1.0" = "sha256-YVJmQ19GF/1u4j37oriGc5f4wTTEJOmeCS8Sr2+etJY=";
+                            "zenoh-web-0.3.0" = "sha256-ITKdWkiPGOgrwTPX4sEvTtzwkemUGhNYb77Z8K6oQ6c=";
+                            "zenoh-dimos-codecs-0.1.0" = "sha256-W78UocZG5eQZnJRrzcMrDmPfBAHNoYBK72FZavTkNKI=";
                         };
                     };
                     isDarwin = pkgs.stdenv.hostPlatform.isDarwin;

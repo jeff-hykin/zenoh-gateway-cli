@@ -1718,12 +1718,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "jpeg-encoder"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b454d911ac55068f53495488d8ccd0646eaa540c033a28ee15b07838afafb01f"
-
-[[package]]
 name = "js-sys"
 version = "0.3.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4929,7 +4923,7 @@ dependencies = [
 [[package]]
 name = "zenoh-dimos-codecs"
 version = "0.1.0"
-source = "git+https://github.com/jeff-hykin/zenoh-dimos-codecs?rev=236fdf5513302880a4a844a680cc475c91dcf96c#236fdf5513302880a4a844a680cc475c91dcf96c"
+source = "git+https://github.com/jeff-hykin/zenoh-dimos-codecs?rev=1b8c92e01e6c130f4044fa6f76e9d5dd71297063#1b8c92e01e6c130f4044fa6f76e9d5dd71297063"
 dependencies = [
  "anyhow",
  "image-webp",
@@ -5349,7 +5343,7 @@ dependencies = [
 [[package]]
 name = "zenoh-web"
 version = "0.3.0"
-source = "git+https://github.com/jeff-hykin/zenoh-web?rev=d1d0f27a1a6f755def9259a9c541a09241eafae8#d1d0f27a1a6f755def9259a9c541a09241eafae8"
+source = "git+https://github.com/jeff-hykin/zenoh-web?rev=0a36decdf4541a130f55853a1ca8ca3afe363ad8#0a36decdf4541a130f55853a1ca8ca3afe363ad8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5357,7 +5351,6 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "futures",
- "jpeg-encoder",
  "log",
  "openh264",
  "serde",
@@ -5368,7 +5361,6 @@ dependencies = [
  "zenoh-ext",
  "zenoh-web-rtc",
  "zenoh-web-webrtc",
- "zune-jpeg",
 ]
 
 [[package]]

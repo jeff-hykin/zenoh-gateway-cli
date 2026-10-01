@@ -92,10 +92,10 @@ try {
 
         // options: the bridge rejects unknown names and bad values; the allocator's options are carried to it
         out.optionErrors = []
-        for (const bad of [{ hz: [1, 10] }, { delivery: { queue: 1 } }, { queueSize: 3 }, { minQuality: 0.9, maxQuality: 0.1 }, { qualityToHzTradeoff: 2 }]) {
+        for (const bad of [{ hz: [1, 10] }, { delivery: { queue: 1 } }, { queueSize: 3 }, { dangerousMinHz: 1 }, { imageTransport: "jpeg" }, { bandwidthPriority: -1 }, { minQuality: 0.9, maxQuality: 0.1 }, { qualityToHzTradeoff: 2 }]) {
             out.optionErrors.push(await client.subscribe("test/jpeg", bad, () => {}).ready().then(() => null, (error) => error.message))
         }
-        const carried = client.subscribe("test/jpeg", { maxHz: 20, minQuality: 0.3, maxQuality: 0.9, qualityToHzTradeoff: 0.7 }, () => {})
+        const carried = client.subscribe("test/jpeg", { bandwidthPriority: 2, maxHz: 20, minQuality: 0.3, maxQuality: 0.9, qualityToHzTradeoff: 0.7 }, () => {})
         await carried.ready()
         await sleep(200)
         await client.pollStats()
@@ -260,7 +260,7 @@ try {
 
     check(results.optionErrors.every((message) => message?.includes("rejected")), `the bridge rejects bad/unknown subscribe options (${results.optionErrors.map((m) => m?.split(":").slice(2).join(":").trim().slice(0, 50)).join(" | ")})`)
     const carried = results.carriedOpts ?? {}
-    check(carried.minQuality === 0.3 && carried.maxQuality === 0.9 && carried.qualityToHzTradeoff === 0.7 && carried.maxHz === 20,
+    check(carried.bandwidthPriority === 2 && carried.minQuality === 0.3 && carried.maxQuality === 0.9 && carried.qualityToHzTradeoff === 0.7 && carried.maxHz === 20,
         `allocator options reach the bridge and show in stats (${JSON.stringify(carried)})`)
     check(Math.abs(results.clock.offsetMs) < 20 && results.clock.rttMs >= 0 && results.clock.bridge?.offsetMs !== null, `clock sync, same machine: offset ${results.clock.offsetMs?.toFixed(2)} ms, rtt ${results.clock.rttMs?.toFixed(2)} ms`)
 

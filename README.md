@@ -146,22 +146,21 @@ Chrome (never the one on port 9222):
   chunked messages, topic listing.
 - `test/codecs.js`: every fixture through each codec: depth values exact at full and half resolution,
   point clouds within the documented quantization bound (intensity exact), video by its quadrant
-  colors within ±10 of the pattern (H.264 is lossy), the same through `imageTransport: "jpeg"` at full
-  and reduced size (JPEG sources passed through byte for byte), latest-only JPEG delivery at `maxHz`,
-  plus unknown-codec rejections and encodes shared across frontends.
+  colors within ±10 of the pattern (H.264 is lossy), plus unknown-codec rejections and encodes shared
+  across frontends.
 - `test/custom_codec.js`: `examples/custom_codec.rs` (zenoh-web with its own zenoh session and two
   codecs of its own): a data codec's text exact through a `registerCodec` decoder (full and half
   quality), a video codec's I420 frames by their color within ±20, unknown names rejected.
-- `test/allocation.js`: equal shrinking, the quality/Hz tradeoff, and a JPEG stream held within the
-  budget under `--max-bandwidth-bytes-per-sec`.
+- `test/allocation.js`: streams shrinking by `bandwidthPriority` (equal, unequal, weight 0 last) and the
+  quality/Hz tradeoff under `--max-bandwidth-bytes-per-sec`.
 - `test/abandoned.js`: a viewer whose browser freezes without closing anything: the bridge drops it and
   goes idle.
 - `test/latency.js`: a strict-priority stream's p99 under bulk load through a userspace UDP shaper.
 - `test/throughput.js` (`deno task e2e:throughput`): one data channel's delivered rate through the shaper
   with delay jitter (`test/shaped_link.js`): at least 2 Mb/s on a ~50 ms ± 20 ms link, and reported
   for a Wi-Fi-like link (RTT 10-430 ms) and a spiky, lossy one.
-- `test/video_latency.js` (`deno task e2e:video-latency`): publish -> arrival -> shown for H.264 and
-  `imageTransport: "jpeg"`, frames identified by a send-time stamp the test peer draws into the pixels;
+- `test/video_latency.js` (`deno task e2e:video-latency`): publish -> arrival -> shown for H.264,
+  frames identified by a send-time stamp the test peer draws into the pixels;
   H.264 must be shown within 10 ms of arriving (zero playout delay). `--profile jitter50|wifi` shapes it.
 - `test/example.js` (`deno task e2e:example`): the example page served by `--serve examples/web`, driven
   through its form; checks decoded video frames, drawn points and depth, the raw rate, a control

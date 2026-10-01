@@ -1,22 +1,21 @@
 #!/usr/bin/env -S deno run --allow-all --unstable-net
-// Where a camera frame's time goes, publish -> arrival -> shown, for H.264 video and for
-// imageTransport "jpeg", optionally over a shaped link (test/shaped_link.js). The test peer stamps
+// Where a camera frame's time goes, publish -> arrival -> shown, for H.264 video, optionally over a shaped link (test/shaped_link.js). The test peer stamps
 // each frame's send time into its pixels (--stamped-image), so every shown frame is identified
 // exactly; the browser reads the stamp back from what it drew. Same machine, so one clock.
-// Usage: deno run --allow-all --unstable-net test/video_latency.js [--profile direct|jitter50|wifi] [--seconds 15] [--transport video|jpeg|both]
+// Usage: deno run --allow-all --unstable-net test/video_latency.js [--profile direct|jitter50|wifi] [--seconds 15]
 
 import { $ } from "https://esm.sh/dax-sh@0.42.0"
 import { parseArgs } from "jsr:@std/cli@1/parse-args"
 import { buildAll, check, finish, fixturesDir, launchBrowser, machineLoad, startBridge, startPeer } from "./harness.js"
 import { links, percentiles, startShapedLink } from "./shaped_link.js"
 
-const args = parseArgs(Deno.args, { string: ["profile", "seconds", "transport", "hz"], default: { profile: "direct", seconds: "15", transport: "both", hz: "30" } })
+const args = parseArgs(Deno.args, { string: ["profile", "seconds", "hz"], default: { profile: "direct", seconds: "15", hz: "30" } })
 const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-web-video-latency-" }))
 console.log(`machine load at start: ${await machineLoad()}`)
 
 const link = args.profile === "direct" ? null : links[args.profile]
 const seconds = Number(args.seconds)
-const transports = args.transport === "both" ? ["video", "jpeg"] : [args.transport]
+const transports = ["video"]
 const key = "video/stamped"
 
 try {
@@ -64,20 +63,10 @@ try {
             }
             const frames = []
             let measuring = false
-            const options = transport === "jpeg" ? { codec: "dimos-image", imageTransport: "jpeg", maxHz: 30 } : { codec: "dimos-image", maxHz: 30 }
+            const options = { codec: "dimos-image", maxHz: 30 }
             let video = null
             const subscription = client.subscribe(key, options, (message) => {
-                if (transport === "jpeg" && message.image) {
-                    const arrived = performance.now()
-                    const stamp = readStamp(message.image, message.image.width, message.image.height)
-                    message.image.close()
-                    // shown: the next animation frame after drawing it
-                    requestAnimationFrame((shownAt) => {
-                        if (measuring) {
-                            frames.push({ arrival: age(unixAt(arrived), stamp), shown: age(unixAt(shownAt), stamp) })
-                        }
-                    })
-                } else if (transport === "video" && message.mediaStream && !video) {
+                if (message.mediaStream && !video) {
                     video = document.createElement("video")
                     video.muted = true
                     video.autoplay = true

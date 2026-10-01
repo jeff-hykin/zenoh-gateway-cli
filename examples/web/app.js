@@ -1,8 +1,8 @@
 // zenoh-web example: no build step, the TypeScript client and the codecs' decoders come transpiled from esm.sh.
 // Query params: ?bridge=<url> (default: this page's origin), ?client=<module url> and ?codecs=<module url> (e.g. a local bundle).
 
-const defaultClientUrl = "https://esm.sh/gh/jeff-hykin/zenoh-web@d1d0f27a1a6f755def9259a9c541a09241eafae8/client/zenoh_web.ts"
-const defaultCodecsUrl = "https://esm.sh/gh/jeff-hykin/zenoh-dimos-codecs@236fdf5513302880a4a844a680cc475c91dcf96c/client/dimos_codecs.ts"
+const defaultClientUrl = "https://esm.sh/gh/jeff-hykin/zenoh-web@0a36decdf4541a130f55853a1ca8ca3afe363ad8/client/zenoh_web.ts"
+const defaultCodecsUrl = "https://esm.sh/gh/jeff-hykin/zenoh-dimos-codecs@1b8c92e01e6c130f4044fa6f76e9d5dd71297063/client/dimos_codecs.ts"
 
 const params = new URLSearchParams(location.search)
 const bridgeUrl = params.get("bridge") ?? location.origin
@@ -376,6 +376,7 @@ class Stream {
         const values = Object.fromEntries(this.controls.map((control) => [control.name, control.value]))
         const options = {
             delivery: "latest",
+            bandwidthPriority: Number(values.bandwidthPriority),
             qualityToHzTradeoff: Number(values.qualityToHzTradeoff),
         }
         if (this.codec) {
