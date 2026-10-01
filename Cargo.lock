@@ -4923,7 +4923,7 @@ dependencies = [
 [[package]]
 name = "zenoh-dimos-codecs"
 version = "0.1.0"
-source = "git+https://github.com/jeff-hykin/zenoh-dimos-codecs?rev=1b8c92e01e6c130f4044fa6f76e9d5dd71297063#1b8c92e01e6c130f4044fa6f76e9d5dd71297063"
+source = "git+https://github.com/jeff-hykin/zenoh-dimos-codecs?rev=8f59c8914c7e5600e2173615ce2b64e16f11b138#8f59c8914c7e5600e2173615ce2b64e16f11b138"
 dependencies = [
  "anyhow",
  "image-webp",
@@ -5343,7 +5343,7 @@ dependencies = [
 [[package]]
 name = "zenoh-web"
 version = "0.3.0"
-source = "git+https://github.com/jeff-hykin/zenoh-web?rev=0a36decdf4541a130f55853a1ca8ca3afe363ad8#0a36decdf4541a130f55853a1ca8ca3afe363ad8"
+source = "git+https://github.com/jeff-hykin/zenoh-web?rev=1aa39731af8b4f6599ee3ef0d00e81106d9cd502#1aa39731af8b4f6599ee3ef0d00e81106d9cd502"
 dependencies = [
  "anyhow",
  "async-trait",

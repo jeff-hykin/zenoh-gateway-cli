@@ -12,8 +12,8 @@ name = "zenoh-web"
 path = "src/main.rs"
 
 [dependencies]
-zenoh-web = { git = "https://github.com/jeff-hykin/zenoh-web", rev = "0a36decdf4541a130f55853a1ca8ca3afe363ad8" }
-zenoh-dimos-codecs = { git = "https://github.com/jeff-hykin/zenoh-dimos-codecs", rev = "1b8c92e01e6c130f4044fa6f76e9d5dd71297063" }
+zenoh-web = { git = "https://github.com/jeff-hykin/zenoh-web", rev = "1aa39731af8b4f6599ee3ef0d00e81106d9cd502" }
+zenoh-dimos-codecs = { git = "https://github.com/jeff-hykin/zenoh-dimos-codecs", rev = "8f59c8914c7e5600e2173615ce2b64e16f11b138" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"

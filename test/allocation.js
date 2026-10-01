@@ -1,6 +1,6 @@
 #!/usr/bin/env -S deno run --allow-all
 // Bandwidth allocation end-to-end, with the bridge's budget capped (--max-bandwidth-bytes-per-sec):
-// streams flex-shrink by bandwidthPriority (equal weights equally, weight 0 last), and the quality/Hz
+// streams flex-shrink by demand / bandwidthPriority (equal priorities equally, priority 0 first), and the quality/Hz
 // tradeoff of a transcoded (H.264) stream.
 // Usage: deno run --allow-all test/allocation.js
 
@@ -75,19 +75,19 @@ try {
     check(raw.bandwidth?.budgetBytesPerSec === rawBudget && raw.bandwidth?.capBytesPerSec === rawBudget && raw.bandwidth?.constrained === true, `frontend budget is the cap (${JSON.stringify(raw.bandwidth)})`)
     check(raw.bytesPerSec <= rawBudget * 1.1, `delivered payload stays within the budget (${raw.bytesPerSec.toFixed(0)} B/s <= ${rawBudget} + 10%)`)
 
-    $.logStep("unequal shrink: bandwidthPriority 0.1 / 10 / 10")
-    const weighted = await measureRaw({ a: { bandwidthPriority: 0.1, maxHz: 20 }, b: { bandwidthPriority: 10, maxHz: 20 }, c: { bandwidthPriority: 10, maxHz: 20 } })
+    $.logStep("unequal shrink: bandwidthPriority 10 / 0.1 / 0.1")
+    const weighted = await measureRaw({ a: { bandwidthPriority: 10, maxHz: 20 }, b: { bandwidthPriority: 0.1, maxHz: 20 }, c: { bandwidthPriority: 0.1, maxHz: 20 } })
     console.log(JSON.stringify(weighted.hz))
-    // the 720 KB/s deficit splits 1 : 100 : 100, so a keeps ~19.8 Hz and b, c fall to ~2.1 Hz
+    // the 720 KB/s deficit splits by demand / priority, 1 : 100 : 100, so a keeps ~19.8 Hz and b, c fall to ~2.1 Hz
     check(weighted.hz.a >= 17 && weighted.hz.b <= 3.5 && weighted.hz.c <= 3.5,
-        `the low-weight stream keeps its rate, the high-weight ones shrink (a ${weighted.hz.a.toFixed(2)}, b ${weighted.hz.b.toFixed(2)}, c ${weighted.hz.c.toFixed(2)} Hz; allocation a ${weighted.allocation.a?.hz?.toFixed(2)}, b ${weighted.allocation.b?.hz?.toFixed(2)} Hz)`)
+        `the high-priority stream keeps its rate, the low-priority ones shrink (a ${weighted.hz.a.toFixed(2)}, b ${weighted.hz.b.toFixed(2)}, c ${weighted.hz.c.toFixed(2)} Hz; allocation a ${weighted.allocation.a?.hz?.toFixed(2)}, b ${weighted.allocation.b?.hz?.toFixed(2)} Hz)`)
 
-    $.logStep("weight 0 shrinks last: bandwidthPriority 0 / 1 / 1")
-    const lastToShrink = await measureRaw({ a: { bandwidthPriority: 0, maxHz: 20 }, b: { maxHz: 20 }, c: { maxHz: 20 } })
-    console.log(JSON.stringify(lastToShrink.hz))
-    // b and c cover the whole deficit (360 KB/s each, down to ~2 Hz); a is untouched
-    check(lastToShrink.hz.a >= 18 && lastToShrink.hz.b <= 3.5 && lastToShrink.hz.c <= 3.5 && lastToShrink.allocation.a?.constrained === false,
-        `a weight-0 stream is not shrunk while others can be (a ${lastToShrink.hz.a.toFixed(2)}, b ${lastToShrink.hz.b.toFixed(2)}, c ${lastToShrink.hz.c.toFixed(2)} Hz)`)
+    $.logStep("priority 0 shrinks first: bandwidthPriority 0 / 1 / 1")
+    const firstToShrink = await measureRaw({ a: { bandwidthPriority: 0, maxHz: 20 }, b: { maxHz: 20 }, c: { maxHz: 20 } })
+    console.log(JSON.stringify(firstToShrink.hz))
+    // a gives up all of its 400 KB/s first; b and c split the remaining 320 KB/s deficit (240 KB/s = 12 Hz each)
+    check(firstToShrink.hz.a <= 1 && firstToShrink.hz.b >= 10 && firstToShrink.hz.b <= 14 && firstToShrink.hz.c >= 10 && firstToShrink.hz.c <= 14,
+        `a priority-0 stream gives up everything before the others give up anything more (a ${firstToShrink.hz.a.toFixed(2)}, b ${firstToShrink.hz.b.toFixed(2)}, c ${firstToShrink.hz.c.toFixed(2)} Hz)`)
 
     $.logStep(`quality/Hz tradeoff: one H.264 stream wanting ~29 KB/s, budget ${videoBudget} B/s`)
     await page.goto(`${videoBridge.url}/test/blank.html`)

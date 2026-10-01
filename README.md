@@ -151,7 +151,7 @@ Chrome (never the one on port 9222):
 - `test/custom_codec.js`: `examples/custom_codec.rs` (zenoh-web with its own zenoh session and two
   codecs of its own): a data codec's text exact through a `registerCodec` decoder (full and half
   quality), a video codec's I420 frames by their color within ±20, unknown names rejected.
-- `test/allocation.js`: streams shrinking by `bandwidthPriority` (equal, unequal, weight 0 last) and the
+- `test/allocation.js`: streams shrinking by `bandwidthPriority` (equal, a higher priority keeping more, priority 0 first) and the
   quality/Hz tradeoff under `--max-bandwidth-bytes-per-sec`.
 - `test/abandoned.js`: a viewer whose browser freezes without closing anything: the bridge drops it and
   goes idle.
