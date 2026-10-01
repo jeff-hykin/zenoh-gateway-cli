@@ -5265,7 +5265,7 @@ dependencies = [
 [[package]]
 name = "zenoh-dimos-codecs"
 version = "0.1.0"
-source = "git+https://github.com/jeff-hykin/zenoh-dimos-codecs?rev=a1f7e21b246d7db97592a6bcf1f320253c4d2d78#a1f7e21b246d7db97592a6bcf1f320253c4d2d78"
+source = "git+https://github.com/jeff-hykin/zenoh-dimos-codecs?rev=8fe2215ba328fbda546a283bba5a54a124141d92#8fe2215ba328fbda546a283bba5a54a124141d92"
 dependencies = [
  "anyhow",
  "image-webp",
@@ -5684,7 +5684,7 @@ dependencies = [
 [[package]]
 name = "zenoh-web"
 version = "0.3.0"
-source = "git+https://github.com/jeff-hykin/zenoh-web?rev=f6f9de2c5e3a069b871389460db3c33d88fcafa7#f6f9de2c5e3a069b871389460db3c33d88fcafa7"
+source = "git+https://github.com/jeff-hykin/zenoh-web?rev=0cdee77e81dcbe87e70b8524a7413ce7470b7de3#0cdee77e81dcbe87e70b8524a7413ce7470b7de3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5692,10 +5692,12 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "futures",
+ "hmac",
  "log",
  "openh264",
  "serde",
  "serde_json",
+ "sha1",
  "tokio",
  "tower-http",
  "unsafe-libopus",
@@ -5713,8 +5715,10 @@ dependencies = [
  "anyhow",
  "clap",
  "env_logger",
+ "json5",
  "log",
  "rav1e",
+ "serde",
  "serde_json",
  "tokio",
  "zenoh",

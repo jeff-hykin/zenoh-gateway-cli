@@ -67,6 +67,10 @@ offline).
 | `--serve <dir>` | | serve a directory (`/` → `index.html`), live-editable on disk |
 | `--max-bandwidth-bytes-per-sec <n>` | none | cap every browser's budget below its estimate (known-slow link, tests) |
 | `--bandwidth-target-fraction <f>` | 0.75 | share of the estimate the allocator hands out; the rest is headroom that keeps queues short |
+| `--auth-file <file>` | none (anyone may do anything) | require a token: json5 map of tokens to grants, see [Auth](#auth) |
+| `--ice-server <url>` | none | STUN/TURN for both ends, e.g. `stun:stun.l.google.com:19302`, `turn:user:pass@relay.example:3478`; repeatable |
+| `--turn-secret <secret>` | none | coturn's `static-auth-secret`: TURN servers without `user:pass@` get credentials minted per connection (valid 24 h) |
+| `--udp-ports <port or low-high>` | ephemeral | WebRTC UDP port range, one port per browser connection (firewall-friendly) |
 
 Logging: `RUST_LOG=info,zenoh=warn`. Access control is zenoh's own: an `access_control` section in
 `--zenoh-config` applies to the browsers' traffic like to any other (denied puts and subscriptions
@@ -87,6 +91,34 @@ are dropped silently), e.g. so no browser can drive the robot:
     },
 }
 ```
+
+## Auth
+
+`--auth-file tokens.json5` makes every browser present a token (`connect(url, { token })`, sent as
+`Authorization: Bearer`). The file maps tokens to a role or a full zenoh-web `Grant`, and may define
+lease groups:
+
+```json5
+{
+    tokens: {
+        "viewer-7f3a": "read",    // subscribe, get and listTopics on everything
+        "ops-91bc": "write",      // read + publish everything
+        "driver-c04d": "lease",   // write + lease any group
+        "safety-55e1": { subscribe: ["**"], publish: ["robot/**"], leaseGroups: ["*"], forceExpire: true, maxLeaseSecs: 600 },
+        "arm-cam": { subscribe: ["robot/arm/camera/**"], listTopics: ["robot/arm/**"] },
+    },
+    leaseGroups: { drive: ["robot/cmd_vel/**"], arm: ["robot/arm/cmd/**"] },
+}
+```
+
+The file is re-read when it changes: removing (or changing) a token revokes it, closing its live
+connections and refusing its reconnects. Lease groups are read at startup. Leases bind only the
+browsers of this bridge, not native zenoh publishers (zenoh's `access_control` covers those). Grants,
+leases and ICE: zenoh-web's README and SPEC ("Auth", "Leases", "ICE and TURN").
+
+A relay with coturn: `turnserver --use-auth-secret --static-auth-secret=$SECRET --realm=robots`, then
+`zenoh-web --ice-server turn:relay.example.org:3478 --turn-secret $SECRET --udp-ports 50000-50100`;
+the bridge and every browser use the relay with credentials minted per connection.
 
 ## Building with nix
 
@@ -167,6 +199,13 @@ Chrome (never the one on port 9222):
 - `test/video_latency.js` (`deno task e2e:video-latency`): publish -> arrival -> shown for H.264,
   frames identified by a send-time stamp the test peer draws into the pixels;
   H.264 must be shown within 10 ms of arriving (zero playout delay). `--profile jitter50|wifi` shapes it.
+- `test/auth.js` (`deno task e2e:auth`): `--auth-file` tokens (no token and unknown tokens refused,
+  read-only can subscribe but not publish, narrower grants for subscribe/get/listTopics), revoking by
+  editing the file, leases (another client's puts dropped with a reason, released when the holder's
+  heartbeat stops, at maxSeconds, force-expire only with the right), and `--ice-server`/`--udp-ports`
+  reaching both ends. With coturn's `turnserver` on PATH (or `TURNSERVER=<path>`; nixpkgs marks it
+  broken on darwin, `NIXPKGS_ALLOW_BROKEN=1 nix build --impure nixpkgs#coturn` builds it) it also
+  runs a relay-only connection through a local coturn with `--turn-secret` credentials.
 - `test/example.js` (`deno task e2e:example`): the example page served by `--serve examples/web`, driven
   through its form; checks decoded video frames, drawn points and depth, the raw rate, a control
   re-subscribing, no console errors, and writes `test/artifacts/example.png`. **Needs internet**

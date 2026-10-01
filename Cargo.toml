@@ -15,13 +15,15 @@ name = "zenoh-web"
 path = "src/main.rs"
 
 [dependencies]
-zenoh-web = { version = "0.3.0", git = "https://github.com/jeff-hykin/zenoh-web", rev = "f6f9de2c5e3a069b871389460db3c33d88fcafa7" }
-zenoh-dimos-codecs = { version = "0.1.0", git = "https://github.com/jeff-hykin/zenoh-dimos-codecs", rev = "a1f7e21b246d7db97592a6bcf1f320253c4d2d78" }
+zenoh-web = { version = "0.3.0", git = "https://github.com/jeff-hykin/zenoh-web", rev = "0cdee77e81dcbe87e70b8524a7413ce7470b7de3" }
+zenoh-dimos-codecs = { version = "0.1.0", git = "https://github.com/jeff-hykin/zenoh-dimos-codecs", rev = "8fe2215ba328fbda546a283bba5a54a124141d92" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 log = "0.4"
 env_logger = "0.11"
+serde = { version = "1", features = ["derive"] }
+json5 = "0.4"
 
 # the e2e suites' zenoh peer and the external-codec server (examples/)
 [dev-dependencies]
