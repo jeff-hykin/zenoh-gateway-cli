@@ -18,8 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/jeff-hykin/zenoh-web-cli/main/insta
 
 It picks the [release](https://github.com/jeff-hykin/zenoh-web-cli/releases) tarball for your OS/CPU,
 checks it against `SHA256SUMS`, and installs `zenoh-web` into `~/.local/bin`. Env overrides:
-`ZENOH_WEB_VERSION=v0.3.0`, `ZENOH_WEB_INSTALL_DIR=/somewhere/bin`. (No release is published here
-yet; the last one, v0.1.0, is at [jeff-hykin/zenoh-web](https://github.com/jeff-hykin/zenoh-web/releases).)
+`ZENOH_WEB_VERSION=v0.3.0`, `ZENOH_WEB_INSTALL_DIR=/somewhere/bin`.
 
 With nix (builds from source; aarch64-darwin, aarch64-linux, x86_64-linux):
 
