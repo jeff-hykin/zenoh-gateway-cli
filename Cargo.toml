@@ -1,0 +1,27 @@
+[package]
+name = "zenoh-web-cli"
+version = "0.3.0"
+edition = "2024"
+rust-version = "1.88"
+description = "The zenoh-web command: zenoh-web with the ROS 2 / dimos codecs"
+repository = "https://github.com/jeff-hykin/zenoh-web-cli"
+publish = false
+
+[[bin]]
+name = "zenoh-web"
+path = "src/main.rs"
+
+[dependencies]
+zenoh-web = { git = "https://github.com/jeff-hykin/zenoh-web", rev = "d1d0f27a1a6f755def9259a9c541a09241eafae8" }
+zenoh-dimos-codecs = { git = "https://github.com/jeff-hykin/zenoh-dimos-codecs", rev = "236fdf5513302880a4a844a680cc475c91dcf96c" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+log = "0.4"
+env_logger = "0.11"
+
+# the e2e suites' zenoh peer and the external-codec server (examples/)
+[dev-dependencies]
+zenoh = "=1.6.2"
+zenoh-ext = { version = "=1.6.2", features = ["unstable"] }
+serde_json = "1"
