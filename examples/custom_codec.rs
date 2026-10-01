@@ -1,19 +1,23 @@
-//! Embeds the zenoh-web server in an application that brings its own zenoh session and two
+//! Embeds the zenoh-web server in an application that brings its own zenoh session and four
 //! external codecs:
 //!
 //! - `text-uppercase` (data): UTF-8 text, upper-cased; lower quality keeps a shorter prefix. The
 //!   page decodes it with `registerCodec("text-uppercase", (bytes) => new TextDecoder().decode(bytes))`.
 //! - `rgb-swatch` (video): a 3-byte payload `r g b` becomes a 64x48 picture of that color (built
-//!   as I420), sent as H.264 on a video track; the page needs no decoder.
+//!   as I420), sent as H.264 by the bridge's encoder on a video track; the page needs no decoder.
+//! - `rgb-swatch-av1` (video): the same pictures through the application's own encoder, AV1
+//!   (rav1e): how a hardware encoder (NVENC, a Jetson's) plugs in.
+//! - `pcm-48k` (audio): the payload is 48 kHz mono signed 16-bit little-endian samples, which the
+//!   bridge encodes to Opus on an audio track.
 //!
 //! ```sh
 //! cargo run --example custom_codec -- --connect tcp/127.0.0.1:7447 --serve examples/web
 //! ```
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use clap::Parser;
 use std::path::PathBuf;
-use zenoh_web::{Codec, CodecOutput, CodecSample, DecodedFrame, Server, VideoImage};
+use zenoh_web::{AudioPcm, Codec, CodecOutput, CodecSample, DecodedFrame, EncodedVideo, Server, VideoEncoder, VideoFormat, VideoImage, VideoTarget};
 
 /// Upper-cases UTF-8 text. Quality q keeps the first `ceil(q × length)` characters.
 struct TextUppercase;
@@ -43,16 +47,23 @@ impl Codec for TextUppercase {
     }
 }
 
-/// A 3-byte RGB payload as a solid 64x48 picture, handed to the bridge as I420 (BT.601).
-struct RgbSwatch;
+/// A 3-byte RGB payload as a solid 64x48 picture, handed to the bridge as I420 (BT.601); `av1`
+/// encodes it with the application's own AV1 encoder instead of the bridge's H.264.
+struct RgbSwatch {
+    av1: bool,
+}
 
 impl Codec for RgbSwatch {
     fn name(&self) -> &str {
-        "rgb-swatch"
+        if self.av1 { "rgb-swatch-av1" } else { "rgb-swatch" }
     }
 
     fn output(&self) -> CodecOutput {
         CodecOutput::Video
+    }
+
+    fn video_encoder(&self) -> Box<dyn VideoEncoder> {
+        if self.av1 { Box::new(Av1Encoder::default()) } else { Box::new(zenoh_web::H264Encoder::default()) }
     }
 
     fn decode(&self, sample: &CodecSample<'_>) -> Result<DecodedFrame> {
@@ -66,6 +77,65 @@ impl Codec for RgbSwatch {
         data.extend(std::iter::repeat_n(u.round() as u8, width * height / 4));
         data.extend(std::iter::repeat_n(v.round() as u8, width * height / 4));
         Ok(DecodedFrame::Video(VideoImage::i420(width as u32, height as u32, data)?))
+    }
+}
+
+/// rav1e at its fastest preset, without lookahead, restarted when the target size changes.
+#[derive(Default)]
+struct Av1Encoder {
+    context: Option<(rav1e::Context<u8>, (u32, u32))>,
+}
+
+impl VideoEncoder for Av1Encoder {
+    fn format(&self) -> VideoFormat {
+        VideoFormat::Av1
+    }
+
+    fn encode(&mut self, frame: &DecodedFrame, target: &VideoTarget) -> Result<Option<EncodedVideo>> {
+        let DecodedFrame::Video(image) = frame else { bail!("the AV1 encoder takes pictures") };
+        let (width, height) = (target.width, target.height);
+        if self.context.as_ref().is_none_or(|(_, size)| *size != (width, height)) {
+            let mut config = rav1e::config::EncoderConfig::with_speed_preset(10);
+            (config.width, config.height, config.bitrate) = (width as usize, height as usize, target.bitrate_bps as i32);
+            (config.low_latency, config.max_key_frame_interval, config.speed_settings.rdo_lookahead_frames) = (true, 90, 1);
+            self.context = Some((rav1e::Config::new().with_encoder_config(config).with_threads(1).new_context()?, (width, height)));
+        }
+        let (context, _) = self.context.as_mut().expect("created above");
+        let picture = image.to_i420(width, height)?;
+        let (luma, chroma) = picture.data().split_at((width * height) as usize);
+        let (u, v) = chroma.split_at(chroma.len() / 2);
+        let mut input = context.new_frame();
+        for (plane, (data, stride)) in input.planes.iter_mut().zip([(luma, width), (u, width / 2), (v, width / 2)]) {
+            plane.copy_from_raw_u8(data, stride as usize, 1);
+        }
+        let keyframe = target.keyframe.then(|| rav1e::prelude::FrameParameters { frame_type_override: rav1e::prelude::FrameTypeOverride::Key, ..Default::default() });
+        context.send_frame((input, keyframe))?;
+        loop {
+            match context.receive_packet() {
+                Ok(packet) => return Ok(Some(EncodedVideo { data: packet.data, width, height, keyframe: packet.frame_type == rav1e::prelude::FrameType::KEY })),
+                Err(rav1e::EncoderStatus::Encoded) => continue,
+                Err(rav1e::EncoderStatus::NeedMoreData) => return Ok(None),
+                Err(error) => bail!("rav1e: {error}"),
+            }
+        }
+    }
+}
+
+/// 48 kHz mono s16le samples as PCM for the bridge's Opus encoder.
+struct Pcm48k;
+
+impl Codec for Pcm48k {
+    fn name(&self) -> &str {
+        "pcm-48k"
+    }
+
+    fn output(&self) -> CodecOutput {
+        CodecOutput::Audio
+    }
+
+    fn decode(&self, sample: &CodecSample<'_>) -> Result<DecodedFrame> {
+        let samples = sample.payload.as_chunks::<2>().0.iter().map(|&bytes| i16::from_le_bytes(bytes)).collect();
+        Ok(DecodedFrame::Audio(AudioPcm::new(48_000, 1, samples)?))
     }
 }
 
@@ -100,7 +170,7 @@ async fn main() -> Result<()> {
     }
     let session = zenoh_web::zenoh::open(config).await.map_err(|error| anyhow::anyhow!("{error}"))?;
 
-    let mut builder = Server::builder().session(session.clone()).codec(TextUppercase).codec(RgbSwatch);
+    let mut builder = Server::builder().session(session.clone()).codec(TextUppercase).codec(RgbSwatch { av1: false }).codec(RgbSwatch { av1: true }).codec(Pcm48k);
     if let Some(dir) = cli.serve {
         builder = builder.serve_dir(dir);
     }

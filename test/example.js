@@ -1,7 +1,7 @@
 #!/usr/bin/env -S deno run --allow-all
 // The example page (examples/web), served by the bridge itself, driven like a user in headless Chrome:
 // video, point cloud, depth and a raw stream from fixtures published by a real zenoh peer.
-// Needs internet: the page imports the client and the codecs' decoders from esm.sh, at pushed commits.
+// Needs internet: the page imports the client from esm.sh, at a pushed commit.
 // Usage: deno run --allow-all test/example.js
 
 import { $ } from "https://esm.sh/dax-sh@0.42.0"

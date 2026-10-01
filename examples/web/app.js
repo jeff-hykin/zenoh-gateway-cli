@@ -1,14 +1,12 @@
-// zenoh-web example: no build step, the TypeScript client and the codecs' decoders come transpiled from esm.sh.
-// Query params: ?bridge=<url> (default: this page's origin), ?client=<module url> and ?codecs=<module url> (e.g. a local bundle).
+// zenoh-web example: no build step, the TypeScript client comes transpiled from esm.sh; depth and
+// point clouds arrive as fields the client decodes, so no codec code is needed.
+// Query params: ?bridge=<url> (default: this page's origin), ?client=<module url> (e.g. a local bundle).
 
-const defaultClientUrl = "https://esm.sh/gh/jeff-hykin/zenoh-web@1aa39731af8b4f6599ee3ef0d00e81106d9cd502/client/zenoh_web.ts"
-const defaultCodecsUrl = "https://esm.sh/gh/jeff-hykin/zenoh-dimos-codecs@8f59c8914c7e5600e2173615ce2b64e16f11b138/client/dimos_codecs.ts"
+const defaultClientUrl = "https://esm.sh/gh/jeff-hykin/zenoh-web@f6f9de2c5e3a069b871389460db3c33d88fcafa7/client/zenoh_web.ts"
 
 const params = new URLSearchParams(location.search)
 const bridgeUrl = params.get("bridge") ?? location.origin
-const { connect, Priority, registerCodec } = await import(params.get("client") ?? defaultClientUrl)
-const { CODECS, codecOutput, registerDimosCodecs } = await import(params.get("codecs") ?? defaultCodecsUrl)
-registerDimosCodecs(registerCodec)
+const { connect, Priority } = await import(params.get("client") ?? defaultClientUrl)
 
 const byId = (id) => document.getElementById(id)
 const connectionStateElement = byId("connection-state")
@@ -118,7 +116,7 @@ byId("refresh-topics").addEventListener("click", refreshTopics)
 
 // ---------------------------------------------------------------- subscribe form
 
-subscribeCodecElement.append(new Option("raw (no codec)", ""), ...CODECS.map((codec) => new Option(codec, codec)))
+subscribeCodecElement.append(new Option("raw (no codec)", ""), ...client.codecs.map(({ name }) => new Option(name, name)))
 subscribeKeyElement.addEventListener("change", () => {
     subscribeCodecElement.value = guessCodec(subscribeKeyElement.value)
 })
@@ -150,7 +148,7 @@ class DepthView {
         container.append(this.canvas, this.caption)
     }
 
-    /** @param {import("https://esm.sh/gh/jeff-hykin/zenoh-dimos-codecs/client/dimos_codecs.ts").DepthImage} depth */
+    /** @param {{ width: number, height: number, sourceWidth: number, sourceHeight: number, stride: number, encoding: string, data: Uint16Array | Float32Array }} depth zenoh-dimos-codecs' depth fields */
     draw(depth) {
         const { width, height, data } = depth
         if (this.canvas.width !== width || this.canvas.height !== height) {
@@ -215,7 +213,7 @@ class PointCloudView {
         })
     }
 
-    /** @param {import("https://esm.sh/gh/jeff-hykin/zenoh-dimos-codecs/client/dimos_codecs.ts").PointCloud} points */
+    /** @param {{ count: number, sourceCount: number, keepEvery: number, maxError: number, positions: Float32Array, intensity?: Uint8Array }} points zenoh-dimos-codecs' point cloud fields */
     draw(points) {
         this.points = points
         this.render()
@@ -327,7 +325,8 @@ class Stream {
     constructor(key, codec) {
         this.key = key
         this.codec = codec
-        this.output = codec ? codecOutput(codec) : "raw"
+        // "video", "fields" (shown as "depth" or "pointcloud" once the first message says which), "data" or "raw"
+        this.output = codec ? client.codecs.find(({ name }) => name === codec)?.output ?? "data" : "raw"
         this.element = streamTemplate.content.firstElementChild.cloneNode(true)
         this.element.dataset.key = key
         this.element.dataset.output = this.output
@@ -337,10 +336,8 @@ class Stream {
         this.statsElement = this.element.querySelector(".stream-stats")
         this.element.querySelector(".close").addEventListener("click", () => this.close())
         const view = this.element.querySelector(".stream-view")
-        this.view = this.output === "video" ? new VideoView(view)
-            : this.output === "depth" ? new DepthView(view)
-            : this.output === "pointcloud" ? new PointCloudView(view)
-            : new RawView(view)
+        this.viewElement = view
+        this.view = this.output === "video" ? new VideoView(view) : this.output === "fields" ? null : new RawView(view)
         this.#setUpControls()
         this.messagesThisSecond = 0
         this.hz = 0
@@ -415,9 +412,12 @@ class Stream {
         this.lastSize = message.video ? message.video.encodedBytes : message.bytes.byteLength
         if (this.output === "video") {
             this.view.draw(message)
-        } else if (this.output === "depth") {
-            this.view.draw(message.decoded)
-        } else if (this.output === "pointcloud") {
+        } else if (message.decoded !== undefined) {
+            if (this.view === null) {
+                this.output = "positions" in message.decoded ? "pointcloud" : "depth"
+                this.element.dataset.output = this.output
+                this.view = this.output === "pointcloud" ? new PointCloudView(this.viewElement) : new DepthView(this.viewElement)
+            }
             this.view.draw(message.decoded)
         }
     }

@@ -165,10 +165,11 @@ try {
         })
         const results = []
         for (const testCase of cases) {
-            for (const maxQuality of [1, 0.5]) {
-                const { depth, bytes, error } = await firstMessage(testCase.key, { codec: testCase.codec, minQuality: maxQuality, maxQuality })
+            // zstd by default (the codec's), and once with compress "none"
+            for (const [maxQuality, compress] of [[1, undefined], [0.5, undefined], ...(testCase === cases[0] ? [[1, "none"]] : [])]) {
+                const { depth, bytes, error } = await firstMessage(testCase.key, { codec: testCase.codec, minQuality: maxQuality, maxQuality, ...(compress ? { compress } : {}) })
                 if (error) {
-                    results.push({ file: testCase.file, codec: testCase.codec, maxQuality, error })
+                    results.push({ file: testCase.file, codec: testCase.codec, maxQuality, compress, error })
                     continue
                 }
                 const formula = formulas[testCase.encoding ?? "16UC1"]
@@ -184,22 +185,22 @@ try {
                         }
                     }
                 }
-                results.push({ file: testCase.file, codec: testCase.codec, maxQuality, width: depth.width, height: depth.height, stride: depth.stride, encoding: depth.encoding, arrayType: depth.data.constructor.name, mismatches, firstMismatch, bytes })
+                results.push({ file: testCase.file, codec: testCase.codec, maxQuality, compress, version: depth.version, width: depth.width, height: depth.height, stride: depth.stride, encoding: depth.encoding, arrayType: depth.data.constructor.name, mismatches, firstMismatch, bytes })
             }
         }
         client.close()
         return results
     }, { args: [bridge.url, depthCases] })
     for (const result of depth) {
-        const label = `${result.codec} ${result.file} maxQuality ${result.maxQuality}`
+        const label = `${result.codec} ${result.file} maxQuality ${result.maxQuality}${result.compress ? ` compress ${result.compress}` : ""}`
         if (result.error) {
             check(false, `${label}: ${result.error}`)
             continue
         }
         const stride = result.maxQuality === 1 ? 1 : 2
         const expectedType = result.encoding === "32FC1" ? "Float32Array" : "Uint16Array"
-        check(result.stride === stride && result.width === 320 / stride && result.height === 240 / stride && result.mismatches === 0 && result.arrayType === expectedType,
-            `${label}: ${result.width}x${result.height} ${result.encoding} ${result.arrayType}, every value exact (${result.mismatches} mismatches${result.firstMismatch ? ` e.g. ${JSON.stringify(result.firstMismatch)}` : ""}), ${result.bytes} bytes`)
+        check(result.version === 2 && result.stride === stride && result.width === 320 / stride && result.height === 240 / stride && result.mismatches === 0 && result.arrayType === expectedType,
+            `${label}: v${result.version} ${result.width}x${result.height} ${result.encoding} ${result.arrayType}, every value exact (${result.mismatches} mismatches${result.firstMismatch ? ` e.g. ${JSON.stringify(result.firstMismatch)}` : ""}), ${result.bytes} bytes decompressed`)
     }
 
     $.logStep("point clouds: int16 quantized over the data channel")
@@ -233,7 +234,7 @@ try {
                     worstError = Math.max(worstError, Math.abs(points.positions[index * 3 + axis] - expected[axis]))
                 }
             }
-            const intensityExact = points.intensity === null ? null : points.intensity.every((value, index) => points.intensityMin + value * points.intensityScale === (testCase.file.includes("xyzi") ? index % 256 : 0))
+            const intensityExact = points.intensity === undefined ? null : points.intensity.every((value, index) => points.intensityMin + value * points.intensityScale === (testCase.file.includes("xyzi") ? index % 256 : 0))
             // reduced: every point inside the source's bounding box grown by maxError
             const low = [0, 0, 0]
             const high = [9.95, 4.95, 0.75]
@@ -248,7 +249,7 @@ try {
             }
             results.push({
                 file: testCase.file, codec: testCase.codec,
-                count: points.count, sourceCount: points.sourceCount, maxError: points.maxError, worstError, hasIntensity: points.intensity !== null, intensityExact, bytes: full.bytes,
+                count: points.count, sourceCount: points.sourceCount, maxError: points.maxError, worstError, hasIntensity: points.intensity !== undefined, version: points.version, originLength: points.origin.length, intensityExact, bytes: full.bytes,
                 reduced: { count: reduced.points.count, bytes: reduced.bytes, keepEvery: reduced.points.keepEvery, maxError: reduced.points.maxError, outside },
             })
         }
@@ -263,8 +264,8 @@ try {
         }
         // documented bound: scale / 2 per axis; scale = (largest extent / 2) / 32767 = 4.975 / 32767 here
         const bound = 4.975 / 32767 / 2
-        check(result.count === 20000 && result.worstError <= result.maxError + 1e-5 && result.maxError <= bound * 1.001,
-            `${label}: ${result.count} points, worst axis error ${result.worstError.toExponential(2)} m <= documented bound ${result.maxError.toExponential(2)} m (${result.bytes} bytes for ${result.sourceCount} source points)`)
+        check(result.version === 3 && result.originLength === 3 && result.count === 20000 && result.worstError <= result.maxError + 1e-5 && result.maxError <= bound * 1.001,
+            `${label}: v${result.version}, ${result.count} points, worst axis error ${result.worstError.toExponential(2)} m <= documented bound ${result.maxError.toExponential(2)} m (${result.bytes} bytes decompressed for ${result.sourceCount} source points)`)
         const wantsIntensity = !result.file.includes("ros2/pointcloud_xyz.")
         check(result.hasIntensity === wantsIntensity && (result.intensityExact ?? true), `${label}: intensity ${result.hasIntensity ? (result.intensityExact ? "exact" : "WRONG") : "absent"} (expected ${wantsIntensity ? "present" : "absent"})`)
         check(result.reduced.count < result.count && result.reduced.outside === 0 && result.reduced.keepEvery === 2 && result.reduced.count === Math.ceil(result.count / 2),
@@ -280,6 +281,8 @@ try {
         const rejection = (options) => first.subscribe(depthKey, options, () => {}).ready().then(() => null, (error) => error.message)
         out.unknownError = await rejection({ codec: "ros2-jpeg" })
         out.reliableVideoError = await rejection({ codec: "ros2-image", delivery: "reliable" })
+        out.zstdVideoError = await rejection({ codec: "ros2-image", compress: "zstd" })
+        out.noneVideo = await rejection({ codec: "ros2-image", compress: "none" })
         // a channel the client never set up: the bridge refuses and closes it
         const rawPeer = first._peer
         const raw = rawPeer.createDataChannel(JSON.stringify({ type: "sub", key: depthKey, id: 999999, opts: { codec: "ros2-jpeg" } }))
@@ -295,6 +298,18 @@ try {
         await sleep(2500)
         await Promise.all([first.pollStats(), second.pollStats()])
         out.shared = subscriptions.map((subscription, index) => ({ received: counts[index], encodes: subscription.bridgeStats?.stats?.encodes, sharedEncodes: subscription.bridgeStats?.stats?.sharedEncodes }))
+        subscriptions.forEach((subscription) => subscription.close())
+        // bytes on the wire per depth message: the codec's default (zstd) against compress "none", quality pinned
+        const perMessage = {}
+        const compared = ["default", "none"].map((compress) => first.subscribe(depthKey, { codec: "ros2-depth", minQuality: 1, ...(compress === "none" ? { compress } : {}) }, () => {}))
+        await Promise.all(compared.map((subscription) => subscription.ready()))
+        await sleep(2000)
+        await first.pollStats()
+        compared.forEach((subscription, index) => {
+            const { stats, opts } = subscription.bridgeStats ?? {}
+            perMessage[index === 0 ? "default" : "none"] = { compress: opts?.compress, bytesPerMessage: Math.round(stats?.bytesSent / stats?.sent), sent: stats?.sent }
+        })
+        out.perMessage = perMessage
         first.close()
         second.close()
         return out
@@ -302,6 +317,10 @@ try {
     console.log(JSON.stringify(extra))
     check(extra.unknownError?.includes("unknown codec"), `bridge: an unknown codec is rejected (${extra.unknownError})`)
     check(extra.reliableVideoError?.includes("video codec"), `bridge: reliable delivery with a video codec is rejected (${extra.reliableVideoError})`)
+    check(extra.zstdVideoError?.includes("already compressed") && extra.noneVideo === null, `bridge: compress "zstd" on a video codec is rejected (${extra.zstdVideoError}), "none" accepted`)
+    const { default: zstdDepth, none: plainDepth } = extra.perMessage
+    check(zstdDepth.compress === "zstd" && plainDepth.compress === "none" && zstdDepth.sent > 5 && plainDepth.sent > 5 && zstdDepth.bytesPerMessage < plainDepth.bytesPerMessage,
+        `depth is zstd by default, ${zstdDepth.bytesPerMessage} bytes/message on the wire vs ${plainDepth.bytesPerMessage} with compress "none"`)
     const bridgeRefusal = await bridge.output.waitFor((line) => line.includes("unknown codec"), 3000).catch(() => null)
     check(extra.rawClosed && bridgeRefusal !== null, `bridge: unknown codec is refused and the channel closed (${bridgeRefusal?.replace(/.*rejected/, "rejected")})`)
     const totalShared = extra.shared.reduce((sum, entry) => sum + (entry.sharedEncodes ?? 0), 0)

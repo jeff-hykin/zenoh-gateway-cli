@@ -50,10 +50,12 @@ Then on the page type a key (e.g. `demo/camera/sensor_msgs.Image`; the codec sel
 `dimos-image`) and press Add. A recent stable Rust (edition 2024), or `nix develop` for a shell with
 Rust, deno, zig and cargo-zigbuild.
 
-The example page (`examples/web/`, plain JS, no build step) imports zenoh-web's client and the codecs'
-decoders from esm.sh at pinned commits, so the browser needs internet. Query parameters:
-`?bridge=<url>` (default: the page's origin), `?client=<module url>` and `?codecs=<module url>` (e.g.
-`/client/zenoh_web.js` from `deno task build`, which bundles both, to work offline).
+The example page (`examples/web/`, plain JS, no build step) imports zenoh-web's client from esm.sh at
+a pinned commit, so the browser needs internet. Depth and point clouds arrive as zenoh-web fields that
+the client decodes itself (`msg.decoded`), zstd-compressed by default; the codec list and which codecs
+are video come from the server (`client.codecs`). Query parameters: `?bridge=<url>` (default: the
+page's origin) and `?client=<module url>` (e.g. `/client/zenoh_web.js` from `deno task build`, to work
+offline).
 
 ## Flags
 
@@ -142,14 +144,18 @@ Each suite starts a real zenoh test peer (`examples/test_peer.rs`), the server, 
 Chrome (never the one on port 9222):
 
 - `test/e2e.js`: pipe, delivery modes, option rejection, clock sync, deadman, zenoh access control,
-  chunked messages, topic listing.
-- `test/codecs.js`: every fixture through each codec: depth values exact at full and half resolution,
+  chunked messages, `compress` on a raw topic (zstd byte-exact in fewer bytes, `"none"`), topic listing.
+- `test/codecs.js`: every fixture through each codec: depth values exact at full and half resolution
+  (zstd by default and with `compress: "none"`, which sends more bytes),
   point clouds within the documented quantization bound (intensity exact), video by its quadrant
-  colors within ±10 of the pattern (H.264 is lossy), plus unknown-codec rejections and encodes shared
+  colors within ±10 of the pattern (H.264 is lossy), plus unknown-codec and video-zstd rejections and encodes shared
   across frontends.
-- `test/custom_codec.js`: `examples/custom_codec.rs` (zenoh-web with its own zenoh session and two
+- `test/custom_codec.js`: `examples/custom_codec.rs` (zenoh-web with its own zenoh session and four
   codecs of its own): a data codec's text exact through a `registerCodec` decoder (full and half
-  quality), a video codec's I420 frames by their color within ±20, unknown names rejected.
+  quality); a video codec's I420 frames by their color within ±20, once through the bridge's H.264
+  and once through the application's own AV1 encoder (rav1e, a `VideoEncoder` as a hardware one would
+  be), checking Chrome's negotiated codec; an audio codec's 400 Hz tone, Opus on an audio track, found
+  by a WebAudio analyser; unknown names rejected.
 - `test/allocation.js`: streams shrinking by `bandwidthPriority` (equal, a higher priority keeping more, priority 0 first) and the
   quality/Hz tradeoff under `--max-bandwidth-bytes-per-sec`.
 - `test/abandoned.js`: a viewer whose browser freezes without closing anything: the bridge drops it and

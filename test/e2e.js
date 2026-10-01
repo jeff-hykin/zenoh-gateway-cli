@@ -92,7 +92,7 @@ try {
 
         // options: the bridge rejects unknown names and bad values; the allocator's options are carried to it
         out.optionErrors = []
-        for (const bad of [{ hz: [1, 10] }, { delivery: { queue: 1 } }, { queueSize: 3 }, { dangerousMinHz: 1 }, { imageTransport: "jpeg" }, { bandwidthPriority: -1 }, { minQuality: 0.9, maxQuality: 0.1 }, { qualityToHzTradeoff: 2 }]) {
+        for (const bad of [{ hz: [1, 10] }, { delivery: { queue: 1 } }, { queueSize: 3 }, { dangerousMinHz: 1 }, { imageTransport: "jpeg" }, { bandwidthPriority: -1 }, { compress: "gzip" }, { minQuality: 0.9, maxQuality: 0.1 }, { qualityToHzTradeoff: 2 }]) {
             out.optionErrors.push(await client.subscribe("test/jpeg", bad, () => {}).ready().then(() => null, (error) => error.message))
         }
         const carried = client.subscribe("test/jpeg", { bandwidthPriority: 2, maxHz: 20, minQuality: 0.3, maxQuality: 0.9, qualityToHzTradeoff: 0.7 }, () => {})
@@ -352,6 +352,21 @@ try {
         bigReliable.close()
         out.reliableBig = reliableBig.slice(0, 3)
 
+        // compress on a raw topic: zstd arrives byte-exact in far fewer bytes on the wire, "none" as is
+        out.compressed = {}
+        for (const compress of ["zstd", "none"]) {
+            const checks = []
+            const subscription = client.subscribe("test/big", { delivery: "reliable", compress }, (message) => checks.push(`${checkBig(message.bytes)} ${message.bytes.length}`))
+            await subscription.ready()
+            for (let waited = 0; waited < 15000 && checks.length < 3; waited += 100) {
+                await sleep(100)
+            }
+            await client.pollStats()
+            const { stats, opts } = subscription.bridgeStats ?? {}
+            out.compressed[compress] = { checks: checks.slice(0, 3), compress: opts?.compress, bytesPerMessage: Math.round(stats?.bytesSent / stats?.sent) }
+            subscription.close()
+        }
+
         // latest + maxAge with a page that stalls after each message: the message in flight during
         // the stall outlives maxAge and is dropped whole; the next one completes
         const latestBig = []
@@ -390,6 +405,11 @@ try {
     check(extra.plans.secret === 0 && extra.plans.open > 10, `a subscription access_control denies gets nothing, an allowed one does (${JSON.stringify(extra.plans)})`)
 
     check(extra.reliableBig.length === 3 && extra.reliableBig.every((message) => message.length === 2_500_000 && message.check === "ok"), `reliable: 2.5 MB messages arrive chunked and byte-exact (${JSON.stringify(extra.reliableBig)})`)
+    const { zstd: zstdBig, none: plainBig } = extra.compressed
+    check(zstdBig.compress === "zstd" && zstdBig.checks.length === 3 && zstdBig.checks.every((entry) => entry === "ok 2500000") && zstdBig.bytesPerMessage < 250_000,
+        `compress "zstd" on a raw topic: byte-exact 2.5 MB messages in ${zstdBig.bytesPerMessage} bytes on the wire (${JSON.stringify(zstdBig.checks)})`)
+    check(plainBig.compress === "none" && plainBig.checks.length === 3 && plainBig.checks.every((entry) => entry === "ok 2500000") && plainBig.bytesPerMessage >= 2_500_000,
+        `compress "none": byte-exact, ${plainBig.bytesPerMessage} bytes on the wire per message`)
     check(extra.latestBig.delivered > 0 && extra.latestBig.bad.length === 0, `latest: every delivered big message is whole (${extra.latestBig.delivered} delivered, ${extra.latestBig.bad.length} bad)`)
     check(extra.latestBig.partialDropped + (extra.latestBig.abandoned ?? 0) > 0, `latest: incomplete big messages were dropped whole (client partialDropped=${extra.latestBig.partialDropped}, bridge abandonedPartial=${extra.latestBig.abandoned})`)
 
