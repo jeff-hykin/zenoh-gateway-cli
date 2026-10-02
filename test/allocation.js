@@ -89,7 +89,7 @@ try {
     check(firstToShrink.hz.a <= 1 && firstToShrink.hz.b >= 10 && firstToShrink.hz.b <= 14 && firstToShrink.hz.c >= 10 && firstToShrink.hz.c <= 14,
         `a priority-0 stream gives up everything before the others give up anything more (a ${firstToShrink.hz.a.toFixed(2)}, b ${firstToShrink.hz.b.toFixed(2)}, c ${firstToShrink.hz.c.toFixed(2)} Hz)`)
 
-    $.logStep(`quality/Hz tradeoff: one H.264 stream wanting ~29 KB/s, budget ${videoBudget} B/s`)
+    $.logStep(`quality/Hz tradeoff: one H.264 stream wanting ~29 KB/s (maxBitrate 230.4 kbit/s), budget ${videoBudget} B/s`)
     await page.goto(`${videoBridge.url}/test/blank.html`)
     const tradeoffs = []
     for (const tradeoff of [0, 1]) {
@@ -99,7 +99,8 @@ try {
             const client = await connect(bridgeUrl)
             const frames = []
             let measuring = false
-            const subscription = client.subscribe(key, { codec: "dimos-image", maxHz: 20, minQuality: 0.2, qualityToHzTradeoff: tradeoff }, (message) => {
+            // 0.15 bit/pixel at 320x240 and 20 Hz
+            const subscription = client.subscribe(key, { codec: "dimos-image", maxHz: 20, minQuality: 0.2, qualityToHzTradeoff: tradeoff, maxBitrate: 230_400 }, (message) => {
                 if (measuring) {
                     frames.push(message.video)
                 }
@@ -138,8 +139,10 @@ try {
     const [keepQuality, keepHz] = tradeoffs
     check(keepQuality.videoWidth === 320 && keepQuality.widths.join() === "320" && keepQuality.hz < 12 && keepQuality.hz > 4,
         `tradeoff 0 keeps quality, Hz drops (${keepQuality.videoWidth}px wide, ${keepQuality.hz.toFixed(1)} Hz sent, ${keepQuality.decodedHz.toFixed(1)} Hz decoded, quality ${keepQuality.quality?.toFixed(2)})`)
-    check(keepHz.videoWidth < 320 && keepHz.hz >= 16,
-        `tradeoff 1 keeps Hz, quality drops (${keepHz.videoWidth}px wide, ${keepHz.hz.toFixed(1)} Hz sent, ${keepHz.decodedHz.toFixed(1)} Hz decoded, quality ${keepHz.quality?.toFixed(2)})`)
+    // fewer bits per frame (a still fixture's frames are tiny either way, so the frames' quality says it), at full size:
+    // 0.06 bit/pixel is above the 0.05 floor where the picture would shrink
+    check(keepHz.hz >= 16 && keepHz.quality < keepQuality.quality && keepHz.widths.join() === "320",
+        `tradeoff 1 keeps Hz, quality drops (${keepHz.widths.join()}px wide, quality ${keepHz.quality?.toFixed(2)} vs ${keepQuality.quality?.toFixed(2)}, ${keepHz.hz.toFixed(1)} Hz sent, ${keepHz.decodedHz.toFixed(1)} Hz decoded)`)
     check(keepQuality.allocation?.constrained && keepHz.allocation?.constrained && keepQuality.allocation.quality > keepHz.allocation.quality && keepQuality.allocation.hz < keepHz.allocation.hz,
         `allocations: tradeoff 0 -> q ${keepQuality.allocation?.quality} @ ${keepQuality.allocation?.hz?.toFixed(1)} Hz, tradeoff 1 -> q ${keepHz.allocation?.quality} @ ${keepHz.allocation?.hz?.toFixed(1)} Hz`)
 

@@ -1,6 +1,6 @@
 [package]
 name = "zenoh-web-cli"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.88"
 description = "The zenoh-web command: zenoh-web with the ROS 2 / dimos codecs"
@@ -15,8 +15,10 @@ name = "zenoh-web"
 path = "src/main.rs"
 
 [dependencies]
-zenoh-web = { version = "0.3.0", git = "https://github.com/jeff-hykin/zenoh-web", rev = "0cdee77e81dcbe87e70b8524a7413ce7470b7de3" }
-zenoh-dimos-codecs = { version = "0.1.0", git = "https://github.com/jeff-hykin/zenoh-dimos-codecs", rev = "8fe2215ba328fbda546a283bba5a54a124141d92" }
+zenoh-web = { version = "0.4.0", git = "https://github.com/jeff-hykin/zenoh-web", rev = "58d5394024674117c2a4faab93d472299a54ef9b" }
+zenoh-dimos-codecs = { version = "0.2.0", git = "https://github.com/jeff-hykin/zenoh-dimos-codecs", rev = "0ba53f176c82da2423eabe465e989228447064da" }
+# hardware video encoders, picked at startup (GStreamer is loaded at runtime, so building needs none)
+zenoh-web-encoders = { version = "0.1.0", git = "https://github.com/jeff-hykin/zenoh-web-encoders", rev = "289e2e19c769f6ef2fc129615e01b3808786f1b7", features = ["videotoolbox", "gstreamer"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
@@ -32,3 +34,4 @@ zenoh-ext = { version = "=1.6.2", features = ["unstable"] }
 serde_json = "1"
 # custom_codec's AV1 encoder (an application's own encoder, as a hardware one would plug in)
 rav1e = { version = "0.8", default-features = false, features = ["threading"] }
+

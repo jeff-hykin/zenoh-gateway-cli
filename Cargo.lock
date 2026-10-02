@@ -2128,6 +2128,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "libloading"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "754ca22de805bb5744484a5b151a9e1a8e837d5dc232c2d7d8c2e3492edc8b60"
+dependencies = [
+ "cfg-if",
+ "windows-link",
+]
+
+[[package]]
 name = "libm"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5264,8 +5274,8 @@ dependencies = [
 
 [[package]]
 name = "zenoh-dimos-codecs"
-version = "0.1.0"
-source = "git+https://github.com/jeff-hykin/zenoh-dimos-codecs?rev=8fe2215ba328fbda546a283bba5a54a124141d92#8fe2215ba328fbda546a283bba5a54a124141d92"
+version = "0.2.0"
+source = "git+https://github.com/jeff-hykin/zenoh-dimos-codecs?rev=0ba53f176c82da2423eabe465e989228447064da#0ba53f176c82da2423eabe465e989228447064da"
 dependencies = [
  "anyhow",
  "image-webp",
@@ -5540,7 +5550,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "968571b0b585c5be1f19c553b368994424a869af46a4785bf5a3248194a97172"
 dependencies = [
  "git-version",
- "libloading",
+ "libloading 0.8.9",
  "serde",
  "stabby",
  "tracing",
@@ -5667,7 +5677,7 @@ dependencies = [
  "humantime",
  "lazy_static",
  "libc",
- "libloading",
+ "libloading 0.8.9",
  "pnet_datalink",
  "schemars 0.8.22",
  "serde",
@@ -5683,8 +5693,8 @@ dependencies = [
 
 [[package]]
 name = "zenoh-web"
-version = "0.3.0"
-source = "git+https://github.com/jeff-hykin/zenoh-web?rev=0cdee77e81dcbe87e70b8524a7413ce7470b7de3#0cdee77e81dcbe87e70b8524a7413ce7470b7de3"
+version = "0.4.0"
+source = "git+https://github.com/jeff-hykin/zenoh-web?rev=58d5394024674117c2a4faab93d472299a54ef9b#58d5394024674117c2a4faab93d472299a54ef9b"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5695,6 +5705,7 @@ dependencies = [
  "hmac",
  "log",
  "openh264",
+ "openh264-sys2",
  "serde",
  "serde_json",
  "sha1",
@@ -5710,7 +5721,7 @@ dependencies = [
 
 [[package]]
 name = "zenoh-web-cli"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -5724,6 +5735,18 @@ dependencies = [
  "zenoh",
  "zenoh-dimos-codecs",
  "zenoh-ext",
+ "zenoh-web",
+ "zenoh-web-encoders",
+]
+
+[[package]]
+name = "zenoh-web-encoders"
+version = "0.1.0"
+source = "git+https://github.com/jeff-hykin/zenoh-web-encoders?rev=289e2e19c769f6ef2fc129615e01b3808786f1b7#289e2e19c769f6ef2fc129615e01b3808786f1b7"
+dependencies = [
+ "anyhow",
+ "libloading 0.9.0",
+ "log",
  "zenoh-web",
 ]
 

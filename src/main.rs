@@ -45,6 +45,10 @@ struct Cli {
     /// UDP port (50000) or range (50000-50100) for WebRTC, one port per browser connection.
     #[arg(long, alias = "udp-port")]
     udp_ports: Option<String>,
+    /// Video encoder: auto (hardware if one works: VideoToolbox, or GStreamer's nvv4l2h264enc / nvh264enc / VAAPI;
+    /// else software), software (openh264), videotoolbox or gstreamer.
+    #[arg(long, default_value = "auto")]
+    video_encoder: zenoh_web_encoders::Backend,
 }
 
 /// `--auth-file`: `{ tokens: { "<token>": "read" | "write" | "lease" | <grant> }, leaseGroups: { "<group>": ["<key expr>"] } }`.
@@ -145,6 +149,11 @@ async fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,zenoh=warn,zenoh_ext=warn,zenoh_web=info,rtc=warn,webrtc=warn")).init();
     let cli = Cli::parse();
     let mut builder = zenoh_web::Server::builder().bandwidth_target_fraction(cli.bandwidth_target_fraction);
+    let video = zenoh_web_encoders::select(cli.video_encoder)?;
+    info!("video encoder: {}", video.name);
+    if let Some(factory) = video.factory {
+        builder = builder.video_encoder(factory);
+    }
     for codec in zenoh_dimos_codecs::all() {
         builder = builder.shared_codec(codec);
     }

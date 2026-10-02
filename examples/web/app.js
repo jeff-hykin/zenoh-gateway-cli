@@ -2,7 +2,7 @@
 // point clouds arrive as fields the client decodes, so no codec code is needed.
 // Query params: ?bridge=<url> (default: this page's origin), ?client=<module url> (e.g. a local bundle).
 
-const defaultClientUrl = "https://esm.sh/gh/jeff-hykin/zenoh-web@0cdee77e81dcbe87e70b8524a7413ce7470b7de3/client/zenoh_web.ts"
+const defaultClientUrl = "https://esm.sh/gh/jeff-hykin/zenoh-web@58d5394024674117c2a4faab93d472299a54ef9b/client/zenoh_web.ts"
 
 const params = new URLSearchParams(location.search)
 const bridgeUrl = params.get("bridge") ?? location.origin

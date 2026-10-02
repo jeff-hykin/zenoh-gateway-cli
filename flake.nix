@@ -16,7 +16,7 @@
             systems = [ "aarch64-darwin" "aarch64-linux" "x86_64-linux" ];
             forAllSystems = lib.genAttrs systems;
             pname = "zenoh-web";
-            version = "0.3.0";
+            version = "0.4.0";
             linuxTarget = "aarch64-unknown-linux-gnu";
             linuxX86Target = "x86_64-unknown-linux-gnu";
             darwinX86Target = "x86_64-apple-darwin";
@@ -38,8 +38,9 @@
                     cargoDeps = rustPlatform.importCargoLock {
                         lockFile = ./Cargo.lock;
                         outputHashes = {
-                            "zenoh-web-0.3.0" = "sha256-9AjlviX/jQHb7lLcCKvLtq7CmSJ/0WPDlOUuiUjmMeE=";
-                            "zenoh-dimos-codecs-0.1.0" = "sha256-Je4e75hiw4h8SrQbS5bh9D653/gZE2Nmun8wsh8OfOU=";
+                            "zenoh-web-0.4.0" = "sha256-Dhz7eZ1ATya/CamK7M6/Ac2ERotT+zWxpy//SDCNFsQ=";
+                            "zenoh-dimos-codecs-0.2.0" = "sha256-ArbfOXCPP/UOBdtX3fWEf8bVZm1okAC4E9ucCUNEHLo=";
+                            "zenoh-web-encoders-0.1.0" = "sha256-W9UxdkIfuk540dGfw3zosRA2hj1uC0jMzkawJUMKa74=";
                         };
                     };
                     isDarwin = pkgs.stdenv.hostPlatform.isDarwin;

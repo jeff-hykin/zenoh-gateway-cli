@@ -2,7 +2,7 @@
 
 The `zenoh-web` command: a [zenoh-web](https://github.com/jeff-hykin/zenoh-web) server with the ROS 2
 / dimos codecs of [zenoh-dimos-codecs](https://github.com/jeff-hykin/zenoh-dimos-codecs). View and
-drive a zenoh system from a browser over WebRTC: camera images as H.264 video, lossless depth,
+drive a zenoh system from a browser over WebRTC: camera images as H.264 video (hardware-encoded where it can), lossless depth,
 quantized point clouds, raw bytes for everything else, and a per-browser bandwidth allocator. The
 client API, the allocator and the wire protocol are documented in zenoh-web's README and SPEC.md.
 
@@ -71,6 +71,7 @@ offline).
 | `--ice-server <url>` | none | STUN/TURN for both ends, e.g. `stun:stun.l.google.com:19302`, `turn:user:pass@relay.example:3478`; repeatable |
 | `--turn-secret <secret>` | none | coturn's `static-auth-secret`: TURN servers without `user:pass@` get credentials minted per connection (valid 24 h) |
 | `--udp-ports <port or low-high>` | ephemeral | WebRTC UDP port range, one port per browser connection (firewall-friendly) |
+| `--video-encoder <name>` | auto | `auto` (the first hardware encoder that encodes a test frame, else software), `software` (openh264), `videotoolbox` (macOS), `gstreamer` (`nvv4l2h264enc` on a Jetson, `nvh264enc`, `vah264enc` / `vaapih264enc`; GStreamer is loaded at runtime, so the binary runs without it); from [zenoh-web-encoders](https://github.com/jeff-hykin/zenoh-web-encoders). A hardware encoder that fails mid-stream hands over to software |
 
 Logging: `RUST_LOG=info,zenoh=warn`. Access control is zenoh's own: an `access_control` section in
 `--zenoh-config` applies to the browsers' traffic like to any other (denied puts and subscriptions

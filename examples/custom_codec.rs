@@ -62,8 +62,9 @@ impl Codec for RgbSwatch {
         CodecOutput::Video
     }
 
-    fn video_encoder(&self) -> Box<dyn VideoEncoder> {
-        if self.av1 { Box::new(Av1Encoder::default()) } else { Box::new(zenoh_web::H264Encoder::default()) }
+    fn video_encoder(&self) -> Option<Box<dyn VideoEncoder>> {
+        // None: the server's (software H.264 here; zenoh-web-cli picks a hardware one)
+        self.av1.then(|| Box::new(Av1Encoder::default()) as Box<dyn VideoEncoder>)
     }
 
     fn decode(&self, sample: &CodecSample<'_>) -> Result<DecodedFrame> {
