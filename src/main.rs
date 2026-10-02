@@ -49,6 +49,13 @@ struct Cli {
     /// else software), software (openh264), videotoolbox or gstreamer.
     #[arg(long, default_value = "auto")]
     video_encoder: zenoh_web_encoders::Backend,
+    /// Also answer WebRTC signalling over zenoh as <name> (queryables zenoh-web/<name>/offer and /ice), so a
+    /// zenoh-web-relay this bridge's zenoh dials out to (--connect) can reach it with no inbound port.
+    #[arg(long)]
+    zenoh_signalling: Option<String>,
+    /// Serve no HTTP (no --port listener): signalling only over zenoh (needs --zenoh-signalling).
+    #[arg(long, requires = "zenoh_signalling")]
+    no_http: bool,
 }
 
 /// `--auth-file`: `{ tokens: { "<token>": "read" | "write" | "lease" | <grant> }, leaseGroups: { "<group>": ["<key expr>"] } }`.
@@ -177,6 +184,9 @@ async fn main() -> anyhow::Result<()> {
         let (low, high) = ports.split_once('-').unwrap_or((ports, ports));
         builder = builder.udp_ports(low.trim().parse()?..=high.trim().parse()?);
     }
+    if let Some(name) = &cli.zenoh_signalling {
+        builder = builder.zenoh_signalling(name);
+    }
     let tokens = Arc::new(RwLock::new(HashMap::new()));
     if let Some(path) = &cli.auth_file {
         let (initial, lease_groups) = load_auth_file(path)?;
@@ -195,5 +205,10 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(watch_auth_file(path, tokens, server.clone()));
     }
     // every frontend's deadmen go out (reliably) before the zenoh session closes
+    if cli.no_http {
+        info!("no HTTP listener: signalling over zenoh only");
+        terminated().await;
+        return server.shutdown().await;
+    }
     server.serve_with_shutdown(("0.0.0.0", cli.port), terminated()).await
 }

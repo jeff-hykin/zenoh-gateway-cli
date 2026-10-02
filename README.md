@@ -72,6 +72,8 @@ offline).
 | `--turn-secret <secret>` | none | coturn's `static-auth-secret`: TURN servers without `user:pass@` get credentials minted per connection (valid 24 h) |
 | `--udp-ports <port or low-high>` | ephemeral | WebRTC UDP port range, one port per browser connection (firewall-friendly) |
 | `--video-encoder <name>` | auto | `auto` (the first hardware encoder that encodes a test frame, else software), `software` (openh264), `videotoolbox` (macOS), `gstreamer` (`nvv4l2h264enc` on a Jetson, `nvh264enc`, `vah264enc` / `vaapih264enc`; GStreamer is loaded at runtime, so the binary runs without it); from [zenoh-web-encoders](https://github.com/jeff-hykin/zenoh-web-encoders). A hardware encoder that fails mid-stream hands over to software |
+| `--zenoh-signalling <name>` | none | also answer signalling over zenoh as `<name>` (queryables `zenoh-web/<name>/offer`, `/ice`), for a [zenoh-web-relay](https://github.com/jeff-hykin/zenoh-web-relay) this bridge's zenoh dials out to; see [Behind a relay](#behind-a-relay) |
+| `--no-http` | off | no HTTP listener at all (needs `--zenoh-signalling`): nothing listens for inbound connections |
 
 Logging: `RUST_LOG=info,zenoh=warn`. Access control is zenoh's own: an `access_control` section in
 `--zenoh-config` applies to the browsers' traffic like to any other (denied puts and subscriptions
@@ -120,6 +122,21 @@ leases and ICE: zenoh-web's README and SPEC ("Auth", "Leases", "ICE and TURN").
 A relay with coturn: `turnserver --use-auth-secret --static-auth-secret=$SECRET --realm=robots`, then
 `zenoh-web --ice-server turn:relay.example.org:3478 --turn-secret $SECRET --udp-ports 50000-50100`;
 the bridge and every browser use the relay with credentials minted per connection.
+
+## Behind a relay
+
+A robot with no inbound ports dials out to a [zenoh-web-relay](https://github.com/jeff-hykin/zenoh-web-relay) on a
+public host, which pulls each camera once and fans it out to the browsers:
+
+```sh
+zenoh-web --zenoh-config robot.json5 --connect tls/relay.example.com:7447 \
+    --zenoh-signalling robot --no-http --auth-file relay-token.json5
+```
+
+The relay (`zenoh-web-relay --backend-name robot --backend-token <token> ...`) signals over that zenoh link; the
+token file holds the relay's token (its grant bounds every viewer of the relay). `robot.json5` carries the TLS CA and
+zenoh user/password for the relay's router; the WebRTC media then flows from the robot to the relay's address.
+`tests/zenoh_signalling.rs` runs this command with `--no-http` and connects to it the relay's way.
 
 ## Building with nix
 
