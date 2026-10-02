@@ -180,6 +180,15 @@ export async function launchBrowser() {
     return browser
 }
 
+/**
+ * Kills `child` in cleanup(), like the bridges and peers this harness starts.
+ * @param {{ kill: (signal?: Deno.Signal) => void }} child
+ */
+export function killOnCleanup(child) {
+    children.push(child)
+    return child
+}
+
 export async function cleanup() {
     for (const browser of browsers) {
         await browser.close().catch(() => {})

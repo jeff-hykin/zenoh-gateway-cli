@@ -3,7 +3,7 @@
 // Usage: deno run --allow-all test/auth.js   (the TURN part needs coturn's turnserver on PATH or TURNSERVER=<path>)
 
 import { $ } from "https://esm.sh/dax-sh@0.42.0"
-import { buildAll, check, finish, freePort, launchBrowser, machineLoad, startBridge, startPeer } from "./harness.js"
+import { buildAll, check, finish, freePort, killOnCleanup, launchBrowser, machineLoad, startBridge, startPeer } from "./harness.js"
 
 const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-web-auth-" }))
 console.log(`machine load at start: ${await machineLoad()}`)
@@ -193,8 +193,9 @@ try {
     let iceArgs = ["--ice-server", `stun:${lanIp}:${turnPort}`, "--udp-ports", `${udpLow}-${udpLow + 4}`]
     if (turnserver) {
         const secret = "e2e-secret"
-        $`${turnserver} -n --listening-ip=${lanIp} --relay-ip=${lanIp} --listening-port=${turnPort} --use-auth-secret --static-auth-secret=${secret} --realm=zenoh-web --no-tls --no-dtls --allow-loopback-peers --cli-port=${freePort()} --min-port=49200 --max-port=49300 --log-file=${scratch.join("turnserver.log")}`
-            .stdout("null").stderr("null").noThrow().spawn()
+        // killed by finish(): a turnserver left behind keeps its ports and outlives the suite
+        killOnCleanup($`${turnserver} -n --listening-ip=${lanIp} --relay-ip=${lanIp} --listening-port=${turnPort} --use-auth-secret --static-auth-secret=${secret} --realm=zenoh-web --no-tls --no-dtls --allow-loopback-peers --cli-port=${freePort()} --min-port=49200 --max-port=49300 --log-file=${scratch.join("turnserver.log")}`
+            .stdout("null").stderr("null").noThrow().spawn())
         await $.sleep(1000)
         iceArgs = ["--ice-server", `turn:${lanIp}:${turnPort}?transport=udp`, "--turn-secret", secret, "--udp-ports", `${udpLow}-${udpLow + 4}`]
     } else {
