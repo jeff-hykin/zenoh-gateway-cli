@@ -141,20 +141,23 @@ zenoh user/password for the relay's router; the WebRTC media then flows from the
 ## Building with nix
 
 ```sh
-nix build .#zenoh-web                  # native (default package); result/bin/zenoh-web
-nix build .#zenoh-web-aarch64-linux    # on an Apple Silicon Mac: aarch64 Linux binary (Jetson, Pi 5)
-nix build .#zenoh-web-x86_64-linux     # on an Apple Silicon Mac: x86_64 Linux binary
-nix build .#zenoh-web-x86_64-darwin    # on an Apple Silicon Mac: Intel macOS binary
-nix develop                            # Rust (+ aarch64-linux target), clippy, deno, zig, cargo-zigbuild
+nix build .#zenoh-web --max-jobs auto                  # native (default package); result/bin/zenoh-web
+nix build .#zenoh-web-aarch64-linux --max-jobs auto    # on a Mac: aarch64 Linux binary (Jetson, Pi 5)
+nix build .#zenoh-web-x86_64-linux --max-jobs auto     # on a Mac: x86_64 Linux binary
+nix build .#zenoh-web-x86_64-darwin                    # on an Apple Silicon Mac: Intel macOS binary
+nix develop                                            # Rust (+ Linux targets), crate2nix, deno
 ```
 
-- The Linux cross builds use cargo-zigbuild with zig as the C/C++ toolchain (openh264, zstd) against glibc
-  2.35 (Ubuntu 22.04, Jetson L4T 36, Pi OS bookworm). The binary needs only `libc.so.6`, `libm.so.6`
-  and the loader (C++ runtime linked statically).
+- Built with zenoh-web's `lib.crossRust` ([crate2nix](https://github.com/nix-community/crate2nix)): every crate is its
+  own derivation, shared with the zenoh-web, codecs, encoders and relay flakes (one build of zenoh, webrtc, tokio, ...
+  for all of them). `--max-jobs auto` lets nix build crates in parallel.
+- The Linux builds are cross compiled with zig as the C compiler and linker (openh264, zstd, ring) against glibc 2.35
+  (Ubuntu 22.04, Jetson L4T 36, Pi OS bookworm): no VM, no GCC cross toolchain. GStreamer (the Jetson's hardware
+  encoder) is opened at runtime, so nothing links it.
 - The macOS binary links `/usr/lib/libiconv.2.dylib` (rewritten from nix's copy), so it runs on Macs without nix.
-  The Intel one is built by the same clang/SDK with `--target x86_64-apple-darwin` (macOS ≥ 14).
-- Cargo dependencies come from `Cargo.lock` (`importCargoLock`); the zenoh-web and zenoh-dimos-codecs
-  git dependencies need their `outputHashes` in `flake.nix` updated whenever their pinned commits change.
+  The Intel one is a plain cargo build by the same clang/SDK with `--target x86_64-apple-darwin` (nixpkgs no longer
+  has x86_64-darwin, so it can't go through crate2nix).
+- After changing `Cargo.lock`, regenerate `Cargo.nix`: `nix run github:jeff-hykin/zenoh-web#crate2nix -- generate`.
 
 ## Releases
 

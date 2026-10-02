@@ -18,13 +18,21 @@
     },
     "root": {
       "inputs": {
-        "nixpkgs": "nixpkgs",
-        "rust-overlay": "rust-overlay"
+        "nixpkgs": [
+          "zenoh-web",
+          "nixpkgs"
+        ],
+        "rust-overlay": [
+          "zenoh-web",
+          "rust-overlay"
+        ],
+        "zenoh-web": "zenoh-web"
       }
     },
     "rust-overlay": {
       "inputs": {
         "nixpkgs": [
+          "zenoh-web",
           "nixpkgs"
         ]
       },
@@ -39,6 +47,25 @@
       "original": {
         "owner": "oxalica",
         "repo": "rust-overlay",
+        "type": "github"
+      }
+    },
+    "zenoh-web": {
+      "inputs": {
+        "nixpkgs": "nixpkgs",
+        "rust-overlay": "rust-overlay"
+      },
+      "locked": {
+        "lastModified": 1790902551,
+        "narHash": "sha256-zu6CbnzfBY5pCc07HGAUsuugHNQXPBCUHVHmlDA/rqA=",
+        "owner": "jeff-hykin",
+        "repo": "zenoh-web",
+        "rev": "db9a0d07e02a31e87df0cebb99620f5baf418bf7",
+        "type": "github"
+      },
+      "original": {
+        "owner": "jeff-hykin",
+        "repo": "zenoh-web",
         "type": "github"
       }
     }
