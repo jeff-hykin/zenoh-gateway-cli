@@ -15,9 +15,9 @@ name = "zenoh-web"
 path = "src/main.rs"
 
 [dependencies]
-zenoh-web = { version = "0.4.0", git = "https://github.com/jeff-hykin/zenoh-web", rev = "fb465e704544008095a00b5416d68b6abc91147c" }
+zenoh-web = { version = "0.4.1", git = "https://github.com/jeff-hykin/zenoh-web", rev = "63b72ddd507fd31cd91dc1c3cc350336ebe08b89" }
 # the codecs, and the hardware video encoders picked at startup (GStreamer is loaded at runtime, so building needs none)
-zenoh-dimos-codecs = { version = "0.2.0", git = "https://github.com/jeff-hykin/zenoh-dimos-codecs", rev = "89b5762e2acf31c28eeef1fc6d98d53a7d821235", features = ["videotoolbox", "gstreamer"] }
+zenoh-dimos-codecs = { version = "0.2.0", git = "https://github.com/jeff-hykin/zenoh-dimos-codecs", rev = "013142da5ba4777a6d00993acc85148d0fe674ce", features = ["videotoolbox", "gstreamer"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
@@ -29,7 +29,7 @@ json5 = "0.4"
 # the e2e suites' zenoh peer and the external-codec server (examples/)
 [dev-dependencies]
 # tests/zenoh_signalling.rs connects to the command the way zenoh-web-relay does
-zenoh-web = { version = "0.4.0", git = "https://github.com/jeff-hykin/zenoh-web", rev = "fb465e704544008095a00b5416d68b6abc91147c", features = ["client"] }
+zenoh-web = { version = "0.4.1", git = "https://github.com/jeff-hykin/zenoh-web", rev = "63b72ddd507fd31cd91dc1c3cc350336ebe08b89", features = ["client"] }
 zenoh = "=1.6.2"
 zenoh-ext = { version = "=1.6.2", features = ["unstable"] }
 serde_json = "1"
