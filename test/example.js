@@ -2,13 +2,14 @@
 // The example page (examples/web), served by the bridge itself, driven like a user in headless Chrome:
 // video, point cloud, depth and a raw stream from fixtures published by a real zenoh peer.
 // Needs internet: the page imports the client from esm.sh, at a pushed commit.
-// Usage: deno run --allow-all test/example.js
+// Usage: deno run --allow-all test/example.js   (UPDATE_SCREENSHOT=1 to refresh the README's test/artifacts/example.png)
 
 import { $ } from "https://esm.sh/dax-sh@0.42.0"
 import { bridgeDir, check, finish, fixtureKey, fixturesDir, launchBrowser, loadManifest, machineLoad, repoRoot, startBridge, startPeer } from "./harness.js"
 
 const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-web-example-" }))
-const screenshotPath = repoRoot.join("test/artifacts/example.png")
+// the README screenshot is only rewritten on request, so a test run leaves the repo clean
+const screenshotPath = Deno.env.get("UPDATE_SCREENSHOT") ? repoRoot.join("test/artifacts/example.png") : scratch.join("example.png")
 console.log(`machine load at start: ${await machineLoad()}`)
 
 const manifest = loadManifest()

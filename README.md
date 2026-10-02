@@ -229,5 +229,5 @@ Chrome (never the one on port 9222):
   runs a relay-only connection through a local coturn with `--turn-secret` credentials.
 - `test/example.js` (`deno task e2e:example`): the example page served by `--serve examples/web`, driven
   through its form; checks decoded video frames, drawn points and depth, the raw rate, a control
-  re-subscribing, no console errors, and writes `test/artifacts/example.png`. **Needs internet**
+  re-subscribing, no console errors, and saves a screenshot to its artifacts dir (`UPDATE_SCREENSHOT=1` refreshes `test/artifacts/example.png`). **Needs internet**
   (esm.sh, at the commits `examples/web/app.js` pins).
