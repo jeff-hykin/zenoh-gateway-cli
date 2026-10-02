@@ -149,7 +149,7 @@ nix develop                                            # Rust (+ Linux targets),
 ```
 
 - Built with zenoh-web's `lib.crossRust` ([crate2nix](https://github.com/nix-community/crate2nix)): every crate is its
-  own derivation, shared with the zenoh-web, codecs, encoders and relay flakes (one build of zenoh, webrtc, tokio, ...
+  own derivation, shared with the zenoh-web, codecs and relay flakes (one build of zenoh, webrtc, tokio, ...
   for all of them). `--max-jobs auto` lets nix build crates in parallel.
 - The Linux builds are cross compiled with zig as the C compiler and linker (openh264, zstd, ring) against glibc 2.35
   (Ubuntu 22.04, Jetson L4T 36, Pi OS bookworm): no VM, no GCC cross toolchain. GStreamer (the Jetson's hardware

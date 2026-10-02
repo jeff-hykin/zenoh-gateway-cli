@@ -16,9 +16,8 @@ path = "src/main.rs"
 
 [dependencies]
 zenoh-web = { version = "0.4.0", git = "https://github.com/jeff-hykin/zenoh-web", rev = "fb465e704544008095a00b5416d68b6abc91147c" }
-zenoh-dimos-codecs = { version = "0.2.0", git = "https://github.com/jeff-hykin/zenoh-dimos-codecs", rev = "665947feaa8c3b1b969929d7c16a9d072043bd76" }
-# hardware video encoders, picked at startup (GStreamer is loaded at runtime, so building needs none)
-zenoh-web-encoders = { version = "0.1.0", git = "https://github.com/jeff-hykin/zenoh-web-encoders", rev = "af0cffa3d67876f7c39e5386f6776b3b17212901", features = ["videotoolbox", "gstreamer"] }
+# the codecs, and the hardware video encoders picked at startup (GStreamer is loaded at runtime, so building needs none)
+zenoh-dimos-codecs = { version = "0.2.0", git = "https://github.com/jeff-hykin/zenoh-dimos-codecs", rev = "89b5762e2acf31c28eeef1fc6d98d53a7d821235", features = ["videotoolbox", "gstreamer"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"

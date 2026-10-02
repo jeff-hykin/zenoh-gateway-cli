@@ -48,7 +48,7 @@ struct Cli {
     /// Video encoder: auto (hardware if one works: VideoToolbox, or GStreamer's nvv4l2h264enc / nvh264enc / VAAPI;
     /// else software), software (openh264), videotoolbox or gstreamer.
     #[arg(long, default_value = "auto")]
-    video_encoder: zenoh_web_encoders::Backend,
+    video_encoder: zenoh_dimos_codecs::encoders::Backend,
     /// Also answer WebRTC signalling over zenoh as <name> (queryables zenoh-web/<name>/offer and /ice), so a
     /// zenoh-web-relay this bridge's zenoh dials out to (--connect) can reach it with no inbound port.
     #[arg(long)]
@@ -156,7 +156,7 @@ async fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,zenoh=warn,zenoh_ext=warn,zenoh_web=info,rtc=warn,webrtc=warn")).init();
     let cli = Cli::parse();
     let mut builder = zenoh_web::Server::builder().bandwidth_target_fraction(cli.bandwidth_target_fraction);
-    let video = zenoh_web_encoders::select(cli.video_encoder)?;
+    let video = zenoh_dimos_codecs::encoders::select(cli.video_encoder)?;
     info!("video encoder: {}", video.name);
     if let Some(factory) = video.factory {
         builder = builder.video_encoder(factory);

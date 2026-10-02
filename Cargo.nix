@@ -17682,8 +17682,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/jeff-hykin/zenoh-dimos-codecs";
-          rev = "665947feaa8c3b1b969929d7c16a9d072043bd76";
-          sha256 = "1l577r7cn88y7xmp2z8jg73i6b9hc7bbbvgxag4v4gvdakd503d6";
+          rev = "89b5762e2acf31c28eeef1fc6d98d53a7d821235";
+          sha256 = "0nh2sz88nrx96mk6c3257f1ngvdy6g58aj41wjdqh4xfh9kykfsh";
         };
         libName = "zenoh_dimos_codecs";
         dependencies = [
@@ -17700,6 +17700,15 @@ rec {
             packageId = "jxl-oxide";
           }
           {
+            name = "libloading";
+            packageId = "libloading 0.9.0";
+            optional = true;
+          }
+          {
+            name = "log";
+            packageId = "log";
+          }
+          {
             name = "png";
             packageId = "png";
           }
@@ -17712,7 +17721,10 @@ rec {
             packageId = "zune-jpeg";
           }
         ];
-
+        features = {
+          "gstreamer" = [ "dep:libloading" ];
+        };
+        resolvedDefaultFeatures = [ "default" "gstreamer" "videotoolbox" ];
       };
       "zenoh-ext" = rec {
         crateName = "zenoh-ext";
@@ -19463,15 +19475,11 @@ rec {
           {
             name = "zenoh-dimos-codecs";
             packageId = "zenoh-dimos-codecs";
+            features = [ "videotoolbox" "gstreamer" ];
           }
           {
             name = "zenoh-web";
             packageId = "zenoh-web";
-          }
-          {
-            name = "zenoh-web-encoders";
-            packageId = "zenoh-web-encoders";
-            features = [ "videotoolbox" "gstreamer" ];
           }
         ];
         devDependencies = [
@@ -19501,41 +19509,6 @@ rec {
           }
         ];
 
-      };
-      "zenoh-web-encoders" = rec {
-        crateName = "zenoh-web-encoders";
-        version = "0.1.0";
-        edition = "2024";
-        workspace_member = null;
-        src = pkgs.fetchgit {
-          url = "https://github.com/jeff-hykin/zenoh-web-encoders";
-          rev = "af0cffa3d67876f7c39e5386f6776b3b17212901";
-          sha256 = "03y2x92kgfvxjr3shh33ai32a1k78z54d2qfydhw183jxqayij6v";
-        };
-        libName = "zenoh_web_encoders";
-        dependencies = [
-          {
-            name = "anyhow";
-            packageId = "anyhow";
-          }
-          {
-            name = "libloading";
-            packageId = "libloading 0.9.0";
-            optional = true;
-          }
-          {
-            name = "log";
-            packageId = "log";
-          }
-          {
-            name = "zenoh-web";
-            packageId = "zenoh-web";
-          }
-        ];
-        features = {
-          "gstreamer" = [ "dep:libloading" ];
-        };
-        resolvedDefaultFeatures = [ "default" "gstreamer" "videotoolbox" ];
       };
       "zenoh-web-rtc" = rec {
         crateName = "zenoh-web-rtc";
