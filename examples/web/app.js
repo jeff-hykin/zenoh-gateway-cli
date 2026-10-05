@@ -1,11 +1,11 @@
 // zenoh-web example: no build step, the TypeScript client comes transpiled from esm.sh; depth and
 // point clouds arrive as fields the client decodes, so no decoding code is needed.
-// Query params: ?bridge=<url> (default: this page's origin), ?client=<module url> (e.g. a local bundle).
+// Query params: ?gateway=<url> (default: this page's origin), ?client=<module url> (e.g. a local bundle).
 
 const defaultClientUrl = "https://esm.sh/gh/jeff-hykin/zenoh-web@fb465e704544008095a00b5416d68b6abc91147c/client/zenoh_web.ts"
 
 const params = new URLSearchParams(location.search)
-const bridgeUrl = params.get("bridge") ?? location.origin
+const bridgeUrl = params.get("gateway") ?? location.origin
 const { connect, Priority } = await import(params.get("client") ?? defaultClientUrl)
 
 const byId = (id) => document.getElementById(id)
@@ -437,7 +437,7 @@ class Stream {
         if (this.output === "raw") {
             this.view.update(this.hz, this.lastSize)
         }
-        const allocation = subscription?.bridgeStats?.allocation
+        const allocation = subscription?.gatewayStats?.allocation
         const pieces = [
             `${this.hz} Hz`,
             `${formatBytes(this.lastSize)}/msg`,
@@ -472,7 +472,7 @@ function renderStats() {
         stream.tick()
     }
     byId("header-rtt").textContent = `rtt ${formatNumber(client.rttMs)} ms`
-    const bandwidth = client.bridgeStats?.bandwidth
+    const bandwidth = client.gatewayStats?.bandwidth
     const rows = [
         ["state", client.state],
         ["rtt", `${formatNumber(client.rttMs)} ms`],
@@ -494,7 +494,7 @@ function renderStats() {
         return [term, definition]
     }))
     keyStatsElement.replaceChildren(...Object.entries(client.stats).map(([key, stats]) => {
-        const allocation = stats.bridge?.allocation
+        const allocation = stats.gateway?.allocation
         const row = document.createElement("tr")
         const cells = [
             key,

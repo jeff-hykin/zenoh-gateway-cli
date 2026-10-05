@@ -68,7 +68,7 @@ try {
         return out
     }, { args: [bridge.url] })
     console.log("grants:", JSON.stringify(grants))
-    check(grants.noToken.includes("bridge refused the token") && grants.noToken.includes("a token is required"), `no token is refused when auth is required (${grants.noToken})`)
+    check(grants.noToken.includes("gateway refused the token") && grants.noToken.includes("a token is required"), `no token is refused when auth is required (${grants.noToken})`)
     check(grants.badToken.includes("unknown token"), `an unknown token is refused (${grants.badToken})`)
     check(grants.iceNoToken === 401, `GET /zenoh-web/ice needs the token too (${grants.iceNoToken})`)
     check(grants.readerSub === "accepted" && grants.readerReceived > 5, `a read token subscribes (${grants.readerSub}, ${grants.readerReceived} messages)`)
@@ -128,7 +128,7 @@ try {
         await sleep(500)
         out.blocked = theirs.blocked
         await other.pollStats()
-        out.rejectedLeased = theirs.bridgeStats?.stats.rejectedLeased
+        out.rejectedLeased = theirs.gatewayStats?.stats.rejectedLeased
         out.secondLease = await outcome(other.lease("cmd"))
         out.overlapping = await outcome(other.lease("mine", { keys: ["test/frombrowser/cmd/*"] }))
         const writer = await connect(bridgeUrl, { token: "writer", ...heartbeat })

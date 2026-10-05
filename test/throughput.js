@@ -54,8 +54,8 @@ try {
                 const kBps = Math.round((bytes - lastBytes) / 1000)
                 lastBytes = bytes
                 client.pollStats().catch(() => {})
-                const bandwidth = client.bridgeStats?.bandwidth
-                timeline.push({ kBps, estimate: Math.round((bandwidth?.dataEstimateBytesPerSec ?? 0) / 1000), queueDelayMs: Math.round(bandwidth?.queueDelayMs ?? 0), delayEvents: bandwidth?.delayEvents, windowKB: Math.round((subscription.bridgeStats?.stats?.windowBytes ?? 0) / 1000) })
+                const bandwidth = client.gatewayStats?.bandwidth
+                timeline.push({ kBps, estimate: Math.round((bandwidth?.dataEstimateBytesPerSec ?? 0) / 1000), queueDelayMs: Math.round(bandwidth?.queueDelayMs ?? 0), delayEvents: bandwidth?.delayEvents, windowKB: Math.round((subscription.gatewayStats?.stats?.windowBytes ?? 0) / 1000) })
             }, 1000)
             measuring = true
             const started = performance.now()
@@ -64,7 +64,7 @@ try {
             const elapsed = (performance.now() - started) / 1000
             clearInterval(sampler)
             await client.pollStats()
-            const stats = subscription.bridgeStats?.stats
+            const stats = subscription.gatewayStats?.stats
             subscription.close()
             client.close()
             return { bytesPerSec: bytes / elapsed, messagesPerSec: messages / elapsed, latencies, timeline, stats }

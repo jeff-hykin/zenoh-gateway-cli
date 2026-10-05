@@ -99,9 +99,9 @@ try {
         await carried.ready()
         await sleep(200)
         await client.pollStats()
-        out.carriedOpts = carried.bridgeStats?.opts
+        out.carriedOpts = carried.gatewayStats?.opts
         carried.close()
-        out.clock = { offsetMs: client.clockOffsetMs, rttMs: client.rttMs, bridge: client.bridgeStats?.clock }
+        out.clock = { offsetMs: client.clockOffsetMs, rttMs: client.rttMs, bridge: client.gatewayStats?.clock }
 
         /**
          * Subscribes to test/fast for a while; latency = arrival - publisher send time (same machine clock).
@@ -124,7 +124,7 @@ try {
             const started = performance.now()
             await sleep(durationMs)
             await client.pollStats()
-            const bridgeStats = subscription.bridgeStats?.stats
+            const bridgeStats = subscription.gatewayStats?.stats
             const dropped = subscription.dropped
             subscription.close()
             await sleep(300)
@@ -177,7 +177,7 @@ try {
         limited.put("fresh-2")
         await sleep(500)
         await skewed.pollStats()
-        out.latency = { offsetMs: skewed.clockOffsetMs, rttMs: skewed.rttMs, stats: limited.bridgeStats?.stats }
+        out.latency = { offsetMs: skewed.clockOffsetMs, rttMs: skewed.rttMs, stats: limited.gatewayStats?.stats }
         skewed.close()
 
         // deadman via heartbeat: 5 Hz, 10 misses = 2 s of silence
@@ -208,7 +208,7 @@ try {
         guarded.resumeHeartbeat()
         await sleep(500)
         await guarded.pollStats()
-        out.tripStats = stop.bridgeStats?.stats
+        out.tripStats = stop.gatewayStats?.stats
         stop.close()
 
         const recreated = guarded.publisher("test/frombrowser/stop", { delivery: "reliable" })
@@ -362,7 +362,7 @@ try {
                 await sleep(100)
             }
             await client.pollStats()
-            const { stats, opts } = subscription.bridgeStats ?? {}
+            const { stats, opts } = subscription.gatewayStats ?? {}
             out.compressed[compress] = { checks: checks.slice(0, 3), compress: opts?.compress, bytesPerMessage: Math.round(stats?.bytesSent / stats?.sent) }
             subscription.close()
         }
@@ -380,7 +380,7 @@ try {
         await bigLatest.ready()
         await sleep(6000)
         await client.pollStats()
-        out.latestBig = { delivered: latestBig.length, bad: latestBig.filter((check) => check !== "ok"), partialDropped: bigLatest.partialDropped, abandoned: bigLatest.bridgeStats?.stats?.abandonedPartial }
+        out.latestBig = { delivered: latestBig.length, bad: latestBig.filter((check) => check !== "ok"), partialDropped: bigLatest.partialDropped, abandoned: bigLatest.gatewayStats?.stats?.abandonedPartial }
         bigLatest.close()
         client.close()
         return out

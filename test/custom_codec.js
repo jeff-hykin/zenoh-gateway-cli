@@ -94,7 +94,7 @@ try {
                 const stats = [...(await client._peer.getStats()).values()]
                 const inbound = stats.find((report) => report.type === "inbound-rtp" && report.kind === "video" && report.trackIdentifier === video.mediaStream.getVideoTracks()[0].id)
                 const mimeType = stats.find((report) => report.id === inbound?.codecId)?.mimeType
-                seen = { width, height, mean: sums.map((sum) => Math.round(sum / Math.max(1, count))), frames: frames.length, metadata: frames.at(-1) ?? null, decodeErrors: video.decodeErrors, encodingErrors: video.bridgeStats?.stats?.encodingErrors, lastEncodingError: video.bridgeStats?.stats?.lastEncodingError, mimeType, framesDecoded: inbound?.framesDecoded }
+                seen = { width, height, mean: sums.map((sum) => Math.round(sum / Math.max(1, count))), frames: frames.length, metadata: frames.at(-1) ?? null, decodeErrors: video.decodeErrors, encodingErrors: video.gatewayStats?.stats?.encodingErrors, lastEncodingError: video.gatewayStats?.stats?.lastEncodingError, mimeType, framesDecoded: inbound?.framesDecoded }
                 element.remove()
             } catch (error) {
                 seen = { error: error.message }
@@ -129,7 +129,7 @@ try {
                 heard = {
                     peakHz: Math.round(peak * context.sampleRate / analyser.fftSize), peakDb: Math.round(spectrum[peak]),
                     messages: audioMessages, bytesReceived: inbound?.bytesReceived, totalAudioEnergy: inbound?.totalAudioEnergy,
-                    mimeType: stats.find((report) => report.id === inbound?.codecId)?.mimeType, encodingErrors: audio.bridgeStats?.stats?.encodingErrors, lastEncodingError: audio.bridgeStats?.stats?.lastEncodingError,
+                    mimeType: stats.find((report) => report.id === inbound?.codecId)?.mimeType, encodingErrors: audio.gatewayStats?.stats?.encodingErrors, lastEncodingError: audio.gatewayStats?.stats?.lastEncodingError,
                 }
                 context.close()
                 element.remove()

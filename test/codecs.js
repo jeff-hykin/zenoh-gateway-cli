@@ -121,7 +121,7 @@ try {
                 return sums.map((sum) => Math.round(sum / Math.max(1, count)))
             })
             await client.pollStats()
-            const stats = subscription.bridgeStats?.stats
+            const stats = subscription.gatewayStats?.stats
             subscription.close()
             element.remove()
             return { ...outcome, width, height, means, metadata: frames.at(-1) ?? null, frames: frames.length, decodeErrors: subscription.decodeErrors, keyframes: stats?.keyframes, encodingErrors: stats?.encodingErrors, lastEncodingError: stats?.lastEncodingError }
@@ -297,7 +297,7 @@ try {
         await Promise.all(subscriptions.map((subscription) => subscription.ready()))
         await sleep(2500)
         await Promise.all([first.pollStats(), second.pollStats()])
-        out.shared = subscriptions.map((subscription, index) => ({ received: counts[index], encodes: subscription.bridgeStats?.stats?.encodes, sharedEncodes: subscription.bridgeStats?.stats?.sharedEncodes }))
+        out.shared = subscriptions.map((subscription, index) => ({ received: counts[index], encodes: subscription.gatewayStats?.stats?.encodes, sharedEncodes: subscription.gatewayStats?.stats?.sharedEncodes }))
         subscriptions.forEach((subscription) => subscription.close())
         // bytes on the wire per depth message: the codec's default (zstd) against compress "none", quality pinned
         const perMessage = {}
@@ -306,7 +306,7 @@ try {
         await sleep(2000)
         await first.pollStats()
         compared.forEach((subscription, index) => {
-            const { stats, opts } = subscription.bridgeStats ?? {}
+            const { stats, opts } = subscription.gatewayStats ?? {}
             perMessage[index === 0 ? "default" : "none"] = { compress: opts?.compress, bytesPerMessage: Math.round(stats?.bytesSent / stats?.sent), sent: stats?.sent }
         })
         out.perMessage = perMessage

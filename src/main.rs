@@ -10,7 +10,7 @@ use std::time::Duration;
 use zenoh_web::{Grant, IceServer};
 
 #[derive(Parser, Debug)]
-#[command(name = "zenoh-web", version, about = "Bridge zenoh to browsers over WebRTC data channels and H.264 video")]
+#[command(name = "zenoh-web", version, about = "A gateway from zenoh to browsers over WebRTC: data channels, video and audio tracks")]
 struct Cli {
     /// HTTP port for signaling (POST /offer) and static files.
     #[arg(long, default_value_t = zenoh_web::DEFAULT_PORT)]
@@ -43,7 +43,7 @@ struct Cli {
     #[arg(long)]
     turn_secret: Option<String>,
     /// Command that mints STUN/TURN servers for each end of each connection, added after --ice-server: run with sh -c,
-    /// with ZENOH_WEB_ICE_SIDE=browser|bridge and ZENOH_WEB_ICE_TOKEN (the connection's token, if any); it prints
+    /// with ZENOH_WEB_ICE_SIDE=browser|gateway and ZENOH_WEB_ICE_TOKEN (the connection's token, if any); it prints
     /// {"iceServers": [...]} or [...] (RTCIceServer objects). On failure, or after 5 s, that end gets only --ice-server.
     #[arg(long, conflicts_with = "cloudflare_turn_key_id")]
     ice_servers_command: Option<String>,
@@ -67,7 +67,7 @@ struct Cli {
     #[arg(long, default_value = "auto")]
     video_encoder: zenoh_dimos_codecs::encoders::Backend,
     /// Also answer WebRTC signalling over zenoh as <name> (queryables zenoh-web/<name>/offer and /ice), so a
-    /// zenoh-web-relay this bridge's zenoh dials out to (--connect) can reach it with no inbound port.
+    /// zenoh-web-relay this gateway's zenoh dials out to (--connect) can reach it with no inbound port.
     #[arg(long)]
     zenoh_signalling: Option<String>,
     /// Serve no HTTP (no --port listener): signalling only over zenoh (needs --zenoh-signalling).
@@ -164,7 +164,7 @@ async fn command_ice_servers(command: &str, request: zenoh_web::IceRequest) -> a
     }
     let side = match request.side {
         zenoh_web::IceSide::Browser => "browser",
-        zenoh_web::IceSide::Bridge => "bridge",
+        zenoh_web::IceSide::Gateway => "gateway",
     };
     let output = tokio::process::Command::new("sh")
         .args(["-c", command])

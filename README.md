@@ -53,7 +53,7 @@ Rust, deno, zig and cargo-zigbuild.
 The example page (`examples/web/`, plain JS, no build step) imports zenoh-web's client from esm.sh at
 a pinned commit, so the browser needs internet. Depth and point clouds arrive as zenoh-web fields that
 the client decodes itself (`msg.decoded`), zstd-compressed by default; the encodings and what each
-sends come from the server (`client.encodings`). Query parameters: `?bridge=<url>` (default: the
+sends come from the server (`client.encodings`). Query parameters: `?gateway=<url>` (default: the
 page's origin) and `?client=<module url>` (e.g. `/client/zenoh_web.js` from `deno task build`, to work
 offline).
 
@@ -70,13 +70,13 @@ offline).
 | `--auth-file <file>` | none (anyone may do anything) | require a token: json5 map of tokens to grants, see [Auth](#auth) |
 | `--ice-server <url>` | none | STUN/TURN for both ends, e.g. `stun:stun.l.google.com:19302`, `turn:user:pass@relay.example:3478`; repeatable |
 | `--turn-secret <secret>` | none | coturn's `static-auth-secret`: TURN servers without `user:pass@` get credentials minted per connection (valid 24 h) |
-| `--ice-servers-command <cmd>` | none | mint STUN/TURN servers per connection, added after `--ice-server`: run with `sh -c`, env `ZENOH_WEB_ICE_SIDE` (`browser`/`bridge`) and `ZENOH_WEB_ICE_TOKEN`; prints `{"iceServers": [...]}` or `[...]`. On failure or after 5 s, only `--ice-server` |
+| `--ice-servers-command <cmd>` | none | mint STUN/TURN servers per connection, added after `--ice-server`: run with `sh -c`, env `ZENOH_WEB_ICE_SIDE` (`browser`/`gateway`) and `ZENOH_WEB_ICE_TOKEN`; prints `{"iceServers": [...]}` or `[...]`. On failure or after 5 s, only `--ice-server` |
 | `--cloudflare-turn-key-id <id>` | none | Cloudflare TURN: credentials minted through Cloudflare's API; the key's API token comes from `CLOUDFLARE_TURN_API_TOKEN` (an env var, so it stays out of `ps`) |
 | `--cloudflare-turn-ttl <seconds>` | 86400 | how long Cloudflare credentials last; the shared set is minted again after half of it |
 | `--cloudflare-turn-per-connection` | off | mint Cloudflare credentials for every connection instead of sharing one set |
 | `--udp-ports <port or low-high>` | ephemeral | WebRTC UDP port range, one port per browser connection (firewall-friendly) |
 | `--video-encoder <name>` | auto | `auto` (the first hardware encoder that encodes a test frame, else software), `software` (openh264), `videotoolbox` (macOS), `gstreamer` (`nvv4l2h264enc` on a Jetson, `nvh264enc`, `vah264enc` / `vaapih264enc`; GStreamer is loaded at runtime, so the binary runs without it); from [zenoh-web-encoders](https://github.com/jeff-hykin/zenoh-web-encoders). A hardware encoder that fails mid-stream hands over to software |
-| `--zenoh-signalling <name>` | none | also answer signalling over zenoh as `<name>` (queryables `zenoh-web/<name>/offer`, `/ice`), for a [zenoh-web-relay](https://github.com/jeff-hykin/zenoh-web-relay) this bridge's zenoh dials out to; see [Behind a relay](#behind-a-relay) |
+| `--zenoh-signalling <name>` | none | also answer signalling over zenoh as `<name>` (queryables `zenoh-web/<name>/offer`, `/ice`), for a [zenoh-web-relay](https://github.com/jeff-hykin/zenoh-web-relay) this gateway's zenoh dials out to; see [Behind a relay](#behind-a-relay) |
 | `--no-http` | off | no HTTP listener at all (needs `--zenoh-signalling`): nothing listens for inbound connections |
 
 Logging: `RUST_LOG=info,zenoh=warn`. Access control is zenoh's own: an `access_control` section in
@@ -120,12 +120,12 @@ lease groups:
 
 The file is re-read when it changes: removing (or changing) a token revokes it, closing its live
 connections and refusing its reconnects. Lease groups are read at startup. Leases bind only the
-browsers of this bridge, not native zenoh publishers (zenoh's `access_control` covers those). Grants,
+browsers of this gateway, not native zenoh publishers (zenoh's `access_control` covers those). Grants,
 leases and ICE: zenoh-web's README and SPEC ("Auth", "Leases", "ICE and TURN").
 
 A relay with coturn: `turnserver --use-auth-secret --static-auth-secret=$SECRET --realm=robots`, then
 `zenoh-web --ice-server turn:relay.example.org:3478 --turn-secret $SECRET --udp-ports 50000-50100`;
-the bridge and every browser use the relay with credentials minted per connection.
+the gateway and every browser use the relay with credentials minted per connection.
 
 Cloudflare TURN instead: `CLOUDFLARE_TURN_API_TOKEN=$TOKEN zenoh-web --cloudflare-turn-key-id $KEY_ID`
 (Cloudflare dashboard → Realtime → TURN). Any other provider: `--ice-servers-command ./mint-turn.sh`.
@@ -195,7 +195,7 @@ codecs'). To test local changes, point cargo at your clones, e.g.
 
 ```toml
 [patch."https://github.com/jeff-hykin/zenoh-web"]
-zenoh-web = { path = "../zenoh-web/bridge" }
+zenoh-web = { path = "../zenoh-web/gateway" }
 [patch."https://github.com/jeff-hykin/zenoh-dimos-codecs"]
 zenoh-dimos-codecs = { path = "../zenoh-dimos-codecs" }
 ```
@@ -213,13 +213,13 @@ Chrome (never the one on port 9222):
 - `test/custom_codec.js`: `examples/custom_codec.rs` (zenoh-web with its own zenoh session, three
   encodings and a video encoder of its own): a data encoding's text exact through a `registerEncoding` decoder (full
   and half `encodeOptions.quality`); a video encoding's I420 frames by their color within ±20, once on `video-h264`
-  (the bridge's encoder) and once on `video-av1` through the application's own AV1 encoder (rav1e, registered with
+  (the gateway's encoder) and once on `video-av1` through the application's own AV1 encoder (rav1e, registered with
   `ServerBuilder::video_encoder` as a hardware one would be), checking Chrome's negotiated format; an audio encoding's
   400 Hz tone, Opus on an audio track, found
   by a WebAudio analyser; unknown names rejected.
 - `test/allocation.js`: streams shrinking by `bandwidthPriority` (equal, a higher priority keeping more, priority 0 first) and the
   quality/Hz tradeoff under `--max-bandwidth-bytes-per-sec`.
-- `test/abandoned.js`: a viewer whose browser freezes without closing anything: the bridge drops it and
+- `test/abandoned.js`: a viewer whose browser freezes without closing anything: the gateway drops it and
   goes idle.
 - `test/latency.js`: a strict-priority stream's p99 under bulk load through a userspace UDP shaper.
 - `test/throughput.js` (`deno task e2e:throughput`): one data channel's delivered rate through the shaper

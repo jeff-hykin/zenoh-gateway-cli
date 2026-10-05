@@ -148,7 +148,7 @@ try {
             const timeline = []
             const sampler = setInterval(async () => {
                 await client.pollStats().catch(() => {})
-                const bandwidth = client.bridgeStats?.bandwidth
+                const bandwidth = client.gatewayStats?.bandwidth
                 timeline.push({ second: Math.floor(Date.now() / 1000), estimate: Math.round(bandwidth?.dataEstimateBytesPerSec ?? 0), budget: Math.round(bandwidth?.budgetBytesPerSec ?? 0), queueDelayMs: bandwidth?.queueDelayMs, delayEvents: bandwidth?.delayEvents })
             }, 1000)
             await subscription.ready()
@@ -158,7 +158,7 @@ try {
             measuring = false
             clearInterval(sampler)
             await client.pollStats()
-            const bridgeSide = subscription.bridgeStats?.stats
+            const bridgeSide = subscription.gatewayStats?.stats
             subscription.close()
             latencies.sort((a, b) => a - b)
             const at = (q) => latencies[Math.min(latencies.length - 1, Math.floor(q * latencies.length))]
@@ -177,8 +177,8 @@ try {
         out.loaded = await measureImportant({ priority: Priority.INTERACTIVE_HIGH }, 10)
         out.bulkBytesPerSec = bulkBytes.reduce((sum, value) => sum + value, 0) / ((performance.now() - started) / 1000)
         await client.pollStats()
-        out.bandwidth = client.bridgeStats?.bandwidth
-        out.bulkAllocation = bulk[0].bridgeStats?.allocation
+        out.bandwidth = client.gatewayStats?.bandwidth
+        out.bulkAllocation = bulk[0].gatewayStats?.allocation
         // contrast, not asserted: the same stream without strict priority shares the bulk path
         out.notStrict = await measureImportant({}, 8)
         bulk.forEach((subscription) => subscription.close())

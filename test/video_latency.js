@@ -106,7 +106,7 @@ try {
             const delta = (name) => (after?.[name] ?? 0) - (before?.[name] ?? 0)
             const perFrame = (name, count) => (1000 * delta(name)) / Math.max(1, delta(count))
             await client.pollStats().catch(() => {})
-            const bridgeStats = subscription.bridgeStats?.stats
+            const bridgeStats = subscription.gatewayStats?.stats
             subscription.close()
             client.close()
             return {

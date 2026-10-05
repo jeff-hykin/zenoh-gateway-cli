@@ -56,8 +56,8 @@ try {
         const result = {
             hz: Object.fromEntries(Object.entries(counts).map(([name, count]) => [name, count / seconds])),
             bytesPerSec: Object.values(bytes).reduce((sum, value) => sum + value, 0) / seconds,
-            allocation: Object.fromEntries(subscriptions.map((subscription, index) => [Object.keys(streams)[index], subscription.bridgeStats?.allocation])),
-            bandwidth: client.bridgeStats?.bandwidth,
+            allocation: Object.fromEntries(subscriptions.map((subscription, index) => [Object.keys(streams)[index], subscription.gatewayStats?.allocation])),
+            bandwidth: client.gatewayStats?.bandwidth,
         }
         client.close()
         await sleep(500)
@@ -126,8 +126,8 @@ try {
                 widths: [...new Set(frames.map((frame) => frame.width))],
                 videoWidth: element.videoWidth,
                 quality: frames.at(-1)?.quality,
-                allocation: subscription.bridgeStats?.allocation,
-                bandwidth: client.bridgeStats?.bandwidth,
+                allocation: subscription.gatewayStats?.allocation,
+                bandwidth: client.gatewayStats?.bandwidth,
             }
             element.remove()
             client.close()
