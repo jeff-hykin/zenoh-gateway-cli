@@ -1,13 +1,13 @@
-//! Embeds the zenoh-web server in an application that brings its own zenoh session and four
-//! external codecs:
+//! Embeds the zenoh-web server in an application that brings its own zenoh session, three
+//! message encodings and its own video encoder:
 //!
-//! - `text-uppercase` (data): UTF-8 text, upper-cased; lower quality keeps a shorter prefix. The
-//!   page decodes it with `registerCodec("text-uppercase", (bytes) => new TextDecoder().decode(bytes))`.
-//! - `rgb-swatch` (video): a 3-byte payload `r g b` becomes a 64x48 picture of that color (built
-//!   as I420), sent as H.264 by the bridge's encoder on a video track; the page needs no decoder.
-//! - `rgb-swatch-av1` (video): the same pictures through the application's own encoder, AV1
-//!   (rav1e): how a hardware encoder (NVENC, a Jetson's) plugs in.
-//! - `pcm-48k` (audio): the payload is 48 kHz mono signed 16-bit little-endian samples, which the
+//! - `text_uppercase` (data): UTF-8 text, upper-cased; lower quality keeps a shorter prefix. The
+//!   page decodes it with `registerEncoding("text_uppercase", (bytes) => new TextDecoder().decode(bytes))`.
+//! - `rgb_swatch` (video): a 3-byte payload `r g b` becomes a 64x48 picture of that color (built
+//!   as I420), sent on a video track; the page needs no decoder. `channel: "video-h264"` (the default) uses the
+//!   bridge's encoder, `"video-av1"` the application's own AV1 encoder (rav1e, registered with
+//!   `ServerBuilder::video_encoder`): how a hardware encoder (NVENC, a Jetson's) plugs in.
+//! - `pcm_48k` (audio): the payload is 48 kHz mono signed 16-bit little-endian samples, which the
 //!   bridge encodes to Opus on an audio track.
 //!
 //! ```sh
@@ -17,58 +17,50 @@
 use anyhow::{Context, Result, bail, ensure};
 use clap::Parser;
 use std::path::PathBuf;
-use zenoh_web::{AudioPcm, Codec, CodecOutput, CodecSample, DecodedFrame, EncodedVideo, Server, VideoEncoder, VideoFormat, VideoImage, VideoTarget};
+use zenoh_web::{AudioPcm, Channel, DecodedFrame, EncodeOptions, EncodedVideo, EncodingOutput, EncodingSample, MessageEncoding, Server, VideoEncoder, VideoFormat, VideoImage, VideoTarget};
 
 /// Upper-cases UTF-8 text. Quality q keeps the first `ceil(q × length)` characters.
 struct TextUppercase;
 
-impl Codec for TextUppercase {
+impl MessageEncoding for TextUppercase {
     fn name(&self) -> &str {
-        "text-uppercase"
+        "text_uppercase"
     }
 
-    fn output(&self) -> CodecOutput {
-        CodecOutput::Data
+    fn output(&self) -> EncodingOutput {
+        EncodingOutput::Data
     }
 
-    fn decode(&self, sample: &CodecSample<'_>) -> Result<DecodedFrame> {
-        let text = std::str::from_utf8(sample.payload).context("text-uppercase needs UTF-8")?;
+    fn decode(&self, sample: &EncodingSample<'_>, _channel: Channel) -> Result<DecodedFrame> {
+        let text = std::str::from_utf8(sample.payload).context("text_uppercase needs UTF-8")?;
         Ok(DecodedFrame::data(text.to_uppercase()))
     }
 
-    fn encode(&self, frame: &DecodedFrame, quality: f64) -> Result<Vec<u8>> {
+    fn encode(&self, frame: &DecodedFrame, options: &EncodeOptions) -> Result<Vec<u8>> {
         let text = frame.downcast::<String>()?;
-        let keep = (text.chars().count() as f64 * quality.clamp(0.0, 1.0)).ceil() as usize;
+        let keep = (text.chars().count() as f64 * options.quality.clamp(0.0, 1.0)).ceil() as usize;
         Ok(text.chars().take(keep).collect::<String>().into_bytes())
     }
 
-    fn estimated_bytes(&self, payload_bytes: usize, quality: f64) -> f64 {
-        payload_bytes as f64 * quality.clamp(0.05, 1.0)
+    fn estimated_bytes(&self, payload_bytes: usize, options: &EncodeOptions) -> f64 {
+        payload_bytes as f64 * options.quality.clamp(0.05, 1.0)
     }
 }
 
-/// A 3-byte RGB payload as a solid 64x48 picture, handed to the bridge as I420 (BT.601); `av1`
-/// encodes it with the application's own AV1 encoder instead of the bridge's H.264.
-struct RgbSwatch {
-    av1: bool,
-}
+/// A 3-byte RGB payload as a solid 64x48 picture, handed to the bridge as I420 (BT.601), for any video channel.
+struct RgbSwatch;
 
-impl Codec for RgbSwatch {
+impl MessageEncoding for RgbSwatch {
     fn name(&self) -> &str {
-        if self.av1 { "rgb-swatch-av1" } else { "rgb-swatch" }
+        "rgb_swatch"
     }
 
-    fn output(&self) -> CodecOutput {
-        CodecOutput::Video
+    fn output(&self) -> EncodingOutput {
+        EncodingOutput::Video
     }
 
-    fn video_encoder(&self) -> Option<Box<dyn VideoEncoder>> {
-        // None: the server's (software H.264 here; zenoh-web-cli picks a hardware one)
-        self.av1.then(|| Box::new(Av1Encoder::default()) as Box<dyn VideoEncoder>)
-    }
-
-    fn decode(&self, sample: &CodecSample<'_>) -> Result<DecodedFrame> {
-        let &[red, green, blue] = sample.payload else { anyhow::bail!("rgb-swatch needs 3 bytes, got {}", sample.payload.len()) };
+    fn decode(&self, sample: &EncodingSample<'_>, _channel: Channel) -> Result<DecodedFrame> {
+        let &[red, green, blue] = sample.payload else { anyhow::bail!("rgb_swatch needs 3 bytes, got {}", sample.payload.len()) };
         let (red, green, blue) = (red as f64, green as f64, blue as f64);
         let luma = 16.0 + 0.257 * red + 0.504 * green + 0.098 * blue;
         let u = 128.0 - 0.148 * red - 0.291 * green + 0.439 * blue;
@@ -81,7 +73,8 @@ impl Codec for RgbSwatch {
     }
 }
 
-/// rav1e at its fastest preset, without lookahead, restarted when the target size changes.
+/// rav1e at its fastest preset, without lookahead, restarted when the target size changes (the application's own; the
+/// bridge has one built in too).
 #[derive(Default)]
 struct Av1Encoder {
     context: Option<(rav1e::Context<u8>, (u32, u32))>,
@@ -125,16 +118,16 @@ impl VideoEncoder for Av1Encoder {
 /// 48 kHz mono s16le samples as PCM for the bridge's Opus encoder.
 struct Pcm48k;
 
-impl Codec for Pcm48k {
+impl MessageEncoding for Pcm48k {
     fn name(&self) -> &str {
-        "pcm-48k"
+        "pcm_48k"
     }
 
-    fn output(&self) -> CodecOutput {
-        CodecOutput::Audio
+    fn output(&self) -> EncodingOutput {
+        EncodingOutput::Audio
     }
 
-    fn decode(&self, sample: &CodecSample<'_>) -> Result<DecodedFrame> {
+    fn decode(&self, sample: &EncodingSample<'_>, _channel: Channel) -> Result<DecodedFrame> {
         let samples = sample.payload.as_chunks::<2>().0.iter().map(|&bytes| i16::from_le_bytes(bytes)).collect();
         Ok(DecodedFrame::Audio(AudioPcm::new(48_000, 1, samples)?))
     }
@@ -171,7 +164,8 @@ async fn main() -> Result<()> {
     }
     let session = zenoh_web::zenoh::open(config).await.map_err(|error| anyhow::anyhow!("{error}"))?;
 
-    let mut builder = Server::builder().session(session.clone()).codec(TextUppercase).codec(RgbSwatch { av1: false }).codec(RgbSwatch { av1: true }).codec(Pcm48k);
+    // channel video-av1 through this encoder instead of the built-in one, as a hardware encoder would plug in
+    let mut builder = Server::builder().session(session.clone()).encoding(TextUppercase).encoding(RgbSwatch).encoding(Pcm48k).video_encoder(|| Box::new(Av1Encoder::default()));
     if let Some(dir) = cli.serve {
         builder = builder.serve_dir(dir);
     }

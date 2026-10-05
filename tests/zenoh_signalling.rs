@@ -47,7 +47,7 @@ async fn cli_answers_signalling_over_zenoh_with_no_http() {
     }
     assert!(refused.contains("refused the token: unknown token"), "{refused}");
     let client = Client::connect_zenoh(&router, "robot", options("relay-secret")).await.unwrap();
-    assert!(client.codecs().iter().any(|codec| codec.output == "video"), "the dimos codecs are registered: {:?}", client.codecs());
+    assert!(client.encodings().iter().any(|encoding| encoding.output == "video"), "the dimos encodings are registered: {:?}", client.encodings());
 
     let mut state = client.subscribe("robot/state", SubscribeOptions::default()).await.unwrap();
     let putter = {

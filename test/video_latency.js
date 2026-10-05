@@ -63,7 +63,7 @@ try {
             }
             const frames = []
             let measuring = false
-            const options = { codec: "dimos-image", maxHz: 30 }
+            const options = { encoding: "dimos_lcm_image", maxHz: 30 }
             let video = null
             const subscription = client.subscribe(key, options, (message) => {
                 if (message.mediaStream && !video) {

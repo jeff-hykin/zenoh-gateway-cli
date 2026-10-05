@@ -100,7 +100,7 @@ try {
             const frames = []
             let measuring = false
             // 0.15 bit/pixel at 320x240 and 20 Hz
-            const subscription = client.subscribe(key, { codec: "dimos-image", maxHz: 20, minQuality: 0.2, qualityToHzTradeoff: tradeoff, maxBitrate: 230_400 }, (message) => {
+            const subscription = client.subscribe(key, { encoding: "dimos_lcm_image", maxHz: 20, minQuality: 0.2, qualityToHzTradeoff: tradeoff, maxBitrate: 230_400 }, (message) => {
                 if (measuring) {
                     frames.push(message.video)
                 }

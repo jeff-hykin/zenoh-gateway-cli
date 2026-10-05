@@ -1,4 +1,4 @@
-//! The `zenoh-web` command: [zenoh_web::Server] with the [zenoh_dimos_codecs] registered.
+//! The `zenoh-web` command: [zenoh_web::Server] with the [zenoh_dimos_codecs] message encodings registered.
 
 use clap::Parser;
 use log::{info, warn};
@@ -42,6 +42,23 @@ struct Cli {
     /// coturn's static-auth-secret: TURN servers without user:pass get credentials minted per connection (valid 24 h).
     #[arg(long)]
     turn_secret: Option<String>,
+    /// Command that mints STUN/TURN servers for each end of each connection, added after --ice-server: run with sh -c,
+    /// with ZENOH_WEB_ICE_SIDE=browser|bridge and ZENOH_WEB_ICE_TOKEN (the connection's token, if any); it prints
+    /// {"iceServers": [...]} or [...] (RTCIceServer objects). On failure, or after 5 s, that end gets only --ice-server.
+    #[arg(long, conflicts_with = "cloudflare_turn_key_id")]
+    ice_servers_command: Option<String>,
+    /// Cloudflare TURN key id: mint TURN credentials through Cloudflare's API (needs CLOUDFLARE_TURN_API_TOKEN).
+    #[arg(long, requires = "cloudflare_turn_api_token")]
+    cloudflare_turn_key_id: Option<String>,
+    /// The Cloudflare TURN key's API token (an environment variable, so it stays out of `ps`).
+    #[arg(long, env = "CLOUDFLARE_TURN_API_TOKEN", hide_env_values = true, hide = true)]
+    cloudflare_turn_api_token: Option<String>,
+    /// How long Cloudflare TURN credentials last, in seconds; shared ones are minted again after half of it.
+    #[arg(long, default_value_t = 24 * 3600)]
+    cloudflare_turn_ttl: u64,
+    /// Mint Cloudflare TURN credentials for every connection instead of sharing one set.
+    #[arg(long)]
+    cloudflare_turn_per_connection: bool,
     /// UDP port (50000) or range (50000-50100) for WebRTC, one port per browser connection.
     #[arg(long, alias = "udp-port")]
     udp_ports: Option<String>,
@@ -134,6 +151,36 @@ fn ice_server(arg: &str) -> IceServer {
     }
 }
 
+/// `--ice-servers-command`: runs `command` for `request`, and reads `{"iceServers": [...]}` or `[...]` from its stdout.
+async fn command_ice_servers(command: &str, request: zenoh_web::IceRequest) -> anyhow::Result<Vec<IceServer>> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Printed {
+        Wrapped {
+            #[serde(rename = "iceServers")]
+            ice_servers: Vec<IceServer>,
+        },
+        Bare(Vec<IceServer>),
+    }
+    let side = match request.side {
+        zenoh_web::IceSide::Browser => "browser",
+        zenoh_web::IceSide::Bridge => "bridge",
+    };
+    let output = tokio::process::Command::new("sh")
+        .args(["-c", command])
+        .env("ZENOH_WEB_ICE_SIDE", side)
+        .env("ZENOH_WEB_ICE_TOKEN", request.token.unwrap_or_default())
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .output()
+        .await?;
+    anyhow::ensure!(output.status.success(), "--ice-servers-command exited with {}: {}", output.status, String::from_utf8_lossy(&output.stderr).trim());
+    let printed: Printed = serde_json::from_slice(&output.stdout).map_err(|error| anyhow::anyhow!("--ice-servers-command printed no ICE servers: {error}"))?;
+    Ok(match printed {
+        Printed::Wrapped { ice_servers } | Printed::Bare(ice_servers) => ice_servers,
+    })
+}
+
 /// Resolves on SIGINT or SIGTERM.
 async fn terminated() {
     let mut terminate = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
@@ -162,7 +209,7 @@ async fn main() -> anyhow::Result<()> {
         builder = builder.video_encoder(factory);
     }
     for codec in zenoh_dimos_codecs::all() {
-        builder = builder.shared_codec(codec);
+        builder = builder.shared_encoding(codec);
     }
     if let Some(path) = &cli.zenoh_config {
         builder = builder.zenoh_config_file(path)?;
@@ -179,6 +226,18 @@ async fn main() -> anyhow::Result<()> {
     builder = builder.ice_servers(cli.ice_server.iter().map(|arg| ice_server(arg)));
     if let Some(secret) = cli.turn_secret {
         builder = builder.turn_secret(secret, Duration::from_secs(24 * 3600));
+    }
+    if let Some(command) = cli.ice_servers_command {
+        let command = Arc::new(command);
+        builder = builder.ice_servers_fn(move |request| {
+            let command = command.clone();
+            async move { command_ice_servers(&command, request).await }
+        });
+    }
+    if let (Some(key_id), Some(api_token)) = (cli.cloudflare_turn_key_id, cli.cloudflare_turn_api_token) {
+        info!("TURN credentials from Cloudflare (key {key_id}, ttl {} s{})", cli.cloudflare_turn_ttl, if cli.cloudflare_turn_per_connection { ", per connection" } else { "" });
+        let turn = zenoh_web::CloudflareTurn::new(key_id, api_token).ttl(Duration::from_secs(cli.cloudflare_turn_ttl)).per_connection(cli.cloudflare_turn_per_connection);
+        builder = builder.cloudflare_turn(turn);
     }
     if let Some(ports) = &cli.udp_ports {
         let (low, high) = ports.split_once('-').unwrap_or((ports, ports));

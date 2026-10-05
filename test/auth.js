@@ -231,6 +231,82 @@ try {
         check(ice.bridgeRelay, "the bridge gathers a relay candidate through the same TURN server with its own minted credentials")
         check(ice.localType === "relay" && ice.received > 5, `a relay-only connection works through coturn (local ${ice.localType}, ${ice.received} messages)`)
     }
+
+    $.logStep("--ice-servers-command")
+    const mintScript = scratch.join("mint_ice.sh")
+    mintScript.writeTextSync(`[ "$ZENOH_WEB_ICE_TOKEN" = broken ] && exit 3\nprintf '{"iceServers":[{"urls":["turn:minted.example:3478"],"username":"%s","credential":"%s"}]}' "$ZENOH_WEB_ICE_SIDE" "$ZENOH_WEB_ICE_TOKEN"\n`)
+    const commandBridge = await startBridge(scratch, peer.zenohPort, webRoot, ["--ice-server", "stun:static.example:3478", "--ice-servers-command", `sh ${mintScript}`])
+    const iceFor = async (token) => (await (await fetch(`${commandBridge.url}/zenoh-web/ice`, { headers: { authorization: `Bearer ${token}` } })).json()).iceServers
+    const minted = await iceFor("abc")
+    check(minted.length === 2 && minted[0].urls[0] === "stun:static.example:3478" && minted[1].urls[0] === "turn:minted.example:3478" && minted[1].username === "browser" && minted[1].credential === "abc", `the command's servers follow --ice-server, with the side and token (${JSON.stringify(minted)})`)
+    const fallback = await iceFor("broken")
+    check(fallback.length === 1 && fallback[0].urls[0] === "stun:static.example:3478", `a failing command leaves only --ice-server (${JSON.stringify(fallback)})`)
+
+    $.logStep("iceTransportPolicy from the ICE reply")
+    const policies = await page.evaluate(async (bridgeUrl) => {
+        const { connect } = await import("/client/zenoh_web.js")
+        const realFetch = window.fetch
+        const RealPeer = window.RTCPeerConnection
+        const seen = []
+        // a host app answering /zenoh-web/ice with a relay policy, as dimos-desktop does
+        window.fetch = async (input, init) => {
+            const response = await realFetch(input, init)
+            if (!String(input).endsWith("/zenoh-web/ice")) {
+                return response
+            }
+            return new Response(JSON.stringify({ ...(await response.json()), iceTransportPolicy: "relay" }), { headers: { "content-type": "application/json" } })
+        }
+        window.RTCPeerConnection = class extends RealPeer {
+            constructor(config) {
+                seen.push(config.iceTransportPolicy)
+                super({ ...config, iceTransportPolicy: "all" })
+            }
+        }
+        try {
+            const fromReply = await connect(bridgeUrl, { reconnect: false, token: "policy" })
+            fromReply.close()
+            const callerWins = await connect(bridgeUrl, { reconnect: false, token: "policy", iceTransportPolicy: "all" })
+            callerWins.close()
+        } finally {
+            window.fetch = realFetch
+            window.RTCPeerConnection = RealPeer
+        }
+        return seen
+    }, { args: [commandBridge.url] })
+    check(policies.join() === "relay,all", `the reply's iceTransportPolicy applies unless connect() sets one (${policies})`)
+
+    // real Cloudflare TURN: CF_TURN_KEY_ID and CLOUDFLARE_TURN_API_TOKEN (or CF_TURN_API_TOKEN)
+    const cloudflareKey = Deno.env.get("CF_TURN_KEY_ID")
+    const cloudflareToken = Deno.env.get("CLOUDFLARE_TURN_API_TOKEN") ?? Deno.env.get("CF_TURN_API_TOKEN")
+    if (cloudflareKey && cloudflareToken) {
+        $.logStep("Cloudflare TURN, relay only")
+        Deno.env.set("CLOUDFLARE_TURN_API_TOKEN", cloudflareToken)
+        const cloudflareBridge = await startBridge(scratch, peer.zenohPort, webRoot, ["--cloudflare-turn-key-id", cloudflareKey, "--cloudflare-turn-ttl", "600"])
+        await $.sleep(500)
+        const relayed = await page.evaluate(async (bridgeUrl) => {
+            const { connect } = await import("/client/zenoh_web.js")
+            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+            const client = await connect(bridgeUrl, { iceTransportPolicy: "relay" }).catch((error) => error)
+            if (client instanceof Error) {
+                return { error: client.message, urls: [] }
+            }
+            let received = 0
+            const subscription = client.subscribe("test/open/data", {}, () => received++)
+            await subscription.ready()
+            await sleep(2000)
+            const stats = [...(await client._peer.getStats()).values()]
+            const pair = stats.find((entry) => entry.type === "candidate-pair" && entry.nominated && entry.state === "succeeded")
+            const local = stats.find((entry) => entry.id === pair?.localCandidateId)
+            const urls = client.iceServers.flatMap((server) => server.urls)
+            client.close()
+            return { urls, received, localType: local?.candidateType, relayUrl: local?.url }
+        }, { args: [cloudflareBridge.url] })
+        console.log("cloudflare:", JSON.stringify({ ...relayed, urls: relayed.urls }))
+        check(relayed.urls.some((url) => url.includes("turn.cloudflare.com")) && !relayed.urls.some((url) => url.split("?")[0].endsWith(":53")), `the client gets Cloudflare's TURN servers, port 53 dropped (${relayed.urls})`)
+        check(relayed.localType === "relay" && relayed.received > 5, `a relay-only connection works through Cloudflare TURN (local ${relayed.localType}, ${relayed.received} messages, ${relayed.error ?? ""})`)
+    } else {
+        console.log("SKIP Cloudflare TURN: set CF_TURN_KEY_ID and CLOUDFLARE_TURN_API_TOKEN")
+    }
 } catch (error) {
     console.error(error)
     check(false, `suite threw: ${error}`)

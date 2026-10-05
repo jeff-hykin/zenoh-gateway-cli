@@ -28,7 +28,7 @@ const subscribed = await doomedPage.evaluate(async (bridgeUrl, key) => {
     const { connect } = await import("/client/zenoh_web.js")
     const client = await connect(bridgeUrl)
     let frames = 0
-    const subscription = client.subscribe(key, { codec: "dimos-image" }, () => frames++)
+    const subscription = client.subscribe(key, { encoding: "dimos_lcm_image" }, () => frames++)
     await subscription.ready()
     await new Promise((resolve) => setTimeout(resolve, 2000))
     return frames

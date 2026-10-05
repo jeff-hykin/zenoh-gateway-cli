@@ -15,22 +15,22 @@ console.log(`machine load at start: ${await machineLoad()}`)
  * @returns {{ codec: string, kind: "video" | "depth" | "pointcloud" }[]}
  */
 function plansFor(entry) {
-    const protocol = entry.protocol === "dimos" ? "dimos" : "ros2"
+    const protocol = entry.protocol === "dimos" ? "dimos_lcm" : "ros2"
     const type = entry.msg_type.split(/[./]/).pop()
     if (type === "PointCloud2") {
-        return [{ codec: `${protocol}-pointcloud2`, kind: "pointcloud" }]
+        return [{ codec: `${protocol}_pointcloud2`, kind: "pointcloud" }]
     }
     if (type === "CompressedImage") {
-        return entry.file.includes("depth") ? [{ codec: `${protocol}-compressed-depth`, kind: "depth" }] : [{ codec: `${protocol}-compressed-image`, kind: "video" }]
+        return entry.file.includes("depth") ? [{ codec: `${protocol}_compressed_depth`, kind: "depth" }] : [{ codec: `${protocol}_compressed_image`, kind: "video" }]
     }
     if (entry.encoding === "16UC1" || entry.encoding === "32FC1") {
-        return [{ codec: `${protocol}-depth`, kind: "depth" }]
+        return [{ codec: `${protocol}_depth`, kind: "depth" }]
     }
     // mono16 is ambiguous (depth-like IR or plain gray): checked both ways
     if (entry.encoding === "mono16") {
-        return [{ codec: `${protocol}-depth`, kind: "depth" }, { codec: `${protocol}-image`, kind: "video" }]
+        return [{ codec: `${protocol}_depth`, kind: "depth" }, { codec: `${protocol}_image`, kind: "video" }]
     }
-    return [{ codec: `${protocol}-image`, kind: "video" }]
+    return [{ codec: `${protocol}_image`, kind: "video" }]
 }
 
 /**
@@ -81,7 +81,7 @@ try {
         const client = await connect(bridgeUrl)
         const results = await Promise.all(cases.map(async (testCase) => {
             const frames = []
-            const subscription = client.subscribe(testCase.key, { codec: testCase.codec, maxHz: 10 }, (message) => frames.push(message.video))
+            const subscription = client.subscribe(testCase.key, { encoding: testCase.codec, maxHz: 10 }, (message) => frames.push(message.video))
             const outcome = { file: testCase.file, codec: testCase.codec }
             try {
                 await subscription.ready()
@@ -124,7 +124,7 @@ try {
             const stats = subscription.bridgeStats?.stats
             subscription.close()
             element.remove()
-            return { ...outcome, width, height, means, metadata: frames.at(-1) ?? null, frames: frames.length, decodeErrors: subscription.decodeErrors, keyframes: stats?.keyframes, codecErrors: stats?.codecErrors, lastCodecError: stats?.lastCodecError }
+            return { ...outcome, width, height, means, metadata: frames.at(-1) ?? null, frames: frames.length, decodeErrors: subscription.decodeErrors, keyframes: stats?.keyframes, encodingErrors: stats?.encodingErrors, lastEncodingError: stats?.lastEncodingError }
         }))
         client.close()
         return results
@@ -139,7 +139,7 @@ try {
         }
         const worst = Math.max(...result.means.flatMap((mean, quadrant) => mean.map((value, channel) => Math.abs(value - testCase.quadrants[quadrant][channel]))))
         check(result.width === 320 && result.height === 240 && worst <= testCase.tolerance,
-            `${label}: video ${result.width}x${result.height}, quadrant means ${JSON.stringify(result.means)} within ${testCase.tolerance} of ${JSON.stringify(testCase.quadrants)} (worst ${worst}; ${result.frames} frames, keyframes ${result.keyframes}, codec errors ${result.codecErrors}${result.lastCodecError ? ` "${result.lastCodecError}"` : ""})`)
+            `${label}: video ${result.width}x${result.height}, quadrant means ${JSON.stringify(result.means)} within ${testCase.tolerance} of ${JSON.stringify(testCase.quadrants)} (worst ${worst}; ${result.frames} frames, keyframes ${result.keyframes}, codec errors ${result.encodingErrors}${result.lastEncodingError ? ` "${result.lastEncodingError}"` : ""})`)
         check(result.metadata?.width === 320 && result.metadata?.sourceWidth === 320 && result.decodeErrors === 0, `${label}: per-frame metadata (${JSON.stringify(result.metadata)})`)
     }
 
@@ -167,7 +167,7 @@ try {
         for (const testCase of cases) {
             // zstd by default (the codec's), and once with compress "none"
             for (const [maxQuality, compress] of [[1, undefined], [0.5, undefined], ...(testCase === cases[0] ? [[1, "none"]] : [])]) {
-                const { depth, bytes, error } = await firstMessage(testCase.key, { codec: testCase.codec, minQuality: maxQuality, maxQuality, ...(compress ? { compress } : {}) })
+                const { depth, bytes, error } = await firstMessage(testCase.key, { encoding: testCase.codec, minQuality: maxQuality, encodeOptions: { quality: maxQuality }, ...(compress ? { compress } : {}) })
                 if (error) {
                     results.push({ file: testCase.file, codec: testCase.codec, maxQuality, compress, error })
                     continue
@@ -220,8 +220,8 @@ try {
         const results = []
         for (const testCase of cases) {
             // quality pinned: the allocator may lower it on a busy machine, and these check the codec at a known quality
-            const full = await firstMessage(testCase.key, { codec: testCase.codec, minQuality: 1 })
-            const reduced = await firstMessage(testCase.key, { codec: testCase.codec, minQuality: 0.5, maxQuality: 0.5 })
+            const full = await firstMessage(testCase.key, { encoding: testCase.codec, minQuality: 1 })
+            const reduced = await firstMessage(testCase.key, { encoding: testCase.codec, minQuality: 0.5, encodeOptions: { quality: 0.5 } })
             if (full.error || reduced.error) {
                 results.push({ file: testCase.file, codec: testCase.codec, error: full.error ?? reduced.error })
                 continue
@@ -279,13 +279,13 @@ try {
         const out = {}
         const first = await connect(bridgeUrl)
         const rejection = (options) => first.subscribe(depthKey, options, () => {}).ready().then(() => null, (error) => error.message)
-        out.unknownError = await rejection({ codec: "ros2-jpeg" })
-        out.reliableVideoError = await rejection({ codec: "ros2-image", delivery: "reliable" })
-        out.zstdVideoError = await rejection({ codec: "ros2-image", compress: "zstd" })
-        out.noneVideo = await rejection({ codec: "ros2-image", compress: "none" })
+        out.unknownError = await rejection({ encoding: "ros2_jpeg" })
+        out.reliableVideoError = await rejection({ encoding: "ros2_image", delivery: "reliable" })
+        out.zstdVideoError = await rejection({ encoding: "ros2_image", compress: "zstd" })
+        out.noneVideo = await rejection({ encoding: "ros2_image", compress: "none" })
         // a channel the client never set up: the bridge refuses and closes it
         const rawPeer = first._peer
-        const raw = rawPeer.createDataChannel(JSON.stringify({ type: "sub", key: depthKey, id: 999999, opts: { codec: "ros2-jpeg" } }))
+        const raw = rawPeer.createDataChannel(JSON.stringify({ type: "sub", key: depthKey, id: 999999, opts: { encoding: "ros2_jpeg" } }))
         out.rawClosed = await new Promise((resolve) => {
             raw.onclose = () => resolve(true)
             setTimeout(() => resolve(false), 5000)
@@ -293,7 +293,7 @@ try {
         // two frontends, same codec + quality: the second reuses encodes (same payload bytes)
         const second = await connect(bridgeUrl)
         const counts = [0, 0]
-        const subscriptions = [first, second].map((client, index) => client.subscribe(depthKey, { codec: "ros2-depth" }, () => counts[index]++))
+        const subscriptions = [first, second].map((client, index) => client.subscribe(depthKey, { encoding: "ros2_depth" }, () => counts[index]++))
         await Promise.all(subscriptions.map((subscription) => subscription.ready()))
         await sleep(2500)
         await Promise.all([first.pollStats(), second.pollStats()])
@@ -301,7 +301,7 @@ try {
         subscriptions.forEach((subscription) => subscription.close())
         // bytes on the wire per depth message: the codec's default (zstd) against compress "none", quality pinned
         const perMessage = {}
-        const compared = ["default", "none"].map((compress) => first.subscribe(depthKey, { codec: "ros2-depth", minQuality: 1, ...(compress === "none" ? { compress } : {}) }, () => {}))
+        const compared = ["default", "none"].map((compress) => first.subscribe(depthKey, { encoding: "ros2_depth", minQuality: 1, ...(compress === "none" ? { compress } : {}) }, () => {}))
         await Promise.all(compared.map((subscription) => subscription.ready()))
         await sleep(2000)
         await first.pollStats()
@@ -315,14 +315,14 @@ try {
         return out
     }, { args: [bridge.url, cases.find((c) => c.file === "ros2/depth_16UC1.cdr").key] })
     console.log(JSON.stringify(extra))
-    check(extra.unknownError?.includes("unknown codec"), `bridge: an unknown codec is rejected (${extra.unknownError})`)
-    check(extra.reliableVideoError?.includes("video codec"), `bridge: reliable delivery with a video codec is rejected (${extra.reliableVideoError})`)
-    check(extra.zstdVideoError?.includes("already compressed") && extra.noneVideo === null, `bridge: compress "zstd" on a video codec is rejected (${extra.zstdVideoError}), "none" accepted`)
+    check(extra.unknownError?.includes("unknown encoding"), `bridge: an unknown encoding is rejected (${extra.unknownError})`)
+    check(extra.reliableVideoError?.includes("lossy"), `bridge: reliable delivery on a video channel is rejected (${extra.reliableVideoError})`)
+    check(extra.zstdVideoError?.includes("already compressed") && extra.noneVideo === null, `bridge: compress "zstd" on a video channel is rejected (${extra.zstdVideoError}), "none" accepted`)
     const { default: zstdDepth, none: plainDepth } = extra.perMessage
     check(zstdDepth.compress === "zstd" && plainDepth.compress === "none" && zstdDepth.sent > 5 && plainDepth.sent > 5 && zstdDepth.bytesPerMessage < plainDepth.bytesPerMessage,
         `depth is zstd by default, ${zstdDepth.bytesPerMessage} bytes/message on the wire vs ${plainDepth.bytesPerMessage} with compress "none"`)
-    const bridgeRefusal = await bridge.output.waitFor((line) => line.includes("unknown codec"), 3000).catch(() => null)
-    check(extra.rawClosed && bridgeRefusal !== null, `bridge: unknown codec is refused and the channel closed (${bridgeRefusal?.replace(/.*rejected/, "rejected")})`)
+    const bridgeRefusal = await bridge.output.waitFor((line) => line.includes("unknown encoding"), 3000).catch(() => null)
+    check(extra.rawClosed && bridgeRefusal !== null, `bridge: an unknown encoding is refused and the channel closed (${bridgeRefusal?.replace(/.*rejected/, "rejected")})`)
     const totalShared = extra.shared.reduce((sum, entry) => sum + (entry.sharedEncodes ?? 0), 0)
     check(extra.shared.every((entry) => entry.received > 5) && totalShared > 0, `identical encodes are shared across frontends (${JSON.stringify(extra.shared)})`)
 } catch (error) {

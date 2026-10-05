@@ -1,8 +1,8 @@
 #!/usr/bin/env -S deno run --allow-all
-// Codecs from outside zenoh-web end-to-end: examples/custom_codec.rs embeds the server (library API,
-// the application's own zenoh session) with a data codec, two video codecs (the bridge's H.264 and
-// the application's own AV1 encoder) and an audio codec written in Rust; a real zenoh peer
-// publishes, headless Chrome subscribes with `codec: "<custom>"`.
+// Encodings from outside zenoh-web end-to-end: examples/custom_codec.rs embeds the server (library API,
+// the application's own zenoh session) with a data encoding, a video encoding (on the bridge's H.264, and on
+// video-av1 through the application's own AV1 encoder) and an audio encoding written in Rust; a real zenoh peer
+// publishes, headless Chrome subscribes with `encoding: "<custom>"`.
 // Usage: deno run --allow-all test/custom_codec.js
 // ZENOH_WEB_CUSTOM_CODEC_BIN=<path> runs another build of the same program (e.g. a downstream crate's).
 
@@ -33,14 +33,14 @@ try {
     const page = await browser.newPage(`${bridge.url}/test/blank.html`)
 
     const result = await page.evaluate(async (bridgeUrl) => {
-        const { connect, registerCodec } = await import("/client/zenoh_web.js")
+        const { connect, registerEncoding } = await import("/client/zenoh_web.js")
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
         const out = {}
         const client = await connect(bridgeUrl)
-        out.codecs = client.codecs
+        out.encodings = client.encodings
 
-        // data codec: the page supplies the decoder
-        registerCodec("text-uppercase", (bytes) => new TextDecoder().decode(bytes))
+        // data encoding: the page supplies the decoder
+        registerEncoding("text_uppercase", (bytes) => new TextDecoder().decode(bytes))
         const firstMessage = (options) => new Promise((resolve) => {
             const timer = setTimeout(() => resolve({ error: "no message in 8 s" }), 8000)
             const subscription = client.subscribe("demo/text", options, (message) => {
@@ -50,19 +50,19 @@ try {
             })
             subscription.ready().catch((error) => resolve({ error: error.message }))
         })
-        out.full = await firstMessage({ codec: "text-uppercase" })
-        out.reduced = await firstMessage({ codec: "text-uppercase", maxQuality: 0.5 })
+        out.full = await firstMessage({ encoding: "text_uppercase" })
+        out.reduced = await firstMessage({ encoding: "text_uppercase", encodeOptions: { quality: 0.5 } })
         try {
-            registerCodec("text-uppercase", () => "another")
+            registerEncoding("text_uppercase", () => "another")
             out.duplicateDecoder = null
         } catch (error) {
             out.duplicateDecoder = error.message
         }
 
-        // video codecs: no page code, frames arrive on the subscription's MediaStream
-        window.watch = async (codec) => {
+        // video: no page code, frames arrive on the subscription's MediaStream
+        window.watch = async (channel) => {
             const frames = []
-            const video = client.subscribe("demo/swatch", { codec }, (message) => frames.push(message.video))
+            const video = client.subscribe("demo/swatch", { encoding: "rgb_swatch", channel }, (message) => frames.push(message.video))
             let seen
             try {
                 await video.ready()
@@ -94,7 +94,7 @@ try {
                 const stats = [...(await client._peer.getStats()).values()]
                 const inbound = stats.find((report) => report.type === "inbound-rtp" && report.kind === "video" && report.trackIdentifier === video.mediaStream.getVideoTracks()[0].id)
                 const mimeType = stats.find((report) => report.id === inbound?.codecId)?.mimeType
-                seen = { width, height, mean: sums.map((sum) => Math.round(sum / Math.max(1, count))), frames: frames.length, metadata: frames.at(-1) ?? null, decodeErrors: video.decodeErrors, codecErrors: video.bridgeStats?.stats?.codecErrors, lastCodecError: video.bridgeStats?.stats?.lastCodecError, mimeType, framesDecoded: inbound?.framesDecoded }
+                seen = { width, height, mean: sums.map((sum) => Math.round(sum / Math.max(1, count))), frames: frames.length, metadata: frames.at(-1) ?? null, decodeErrors: video.decodeErrors, encodingErrors: video.bridgeStats?.stats?.encodingErrors, lastEncodingError: video.bridgeStats?.stats?.lastEncodingError, mimeType, framesDecoded: inbound?.framesDecoded }
                 element.remove()
             } catch (error) {
                 seen = { error: error.message }
@@ -103,11 +103,11 @@ try {
             return seen
         }
 
-        // audio codec: PCM in, Opus on an audio track; the page hears a 400 Hz tone
+        // audio encoding: PCM in, Opus on an audio track; the page hears a 400 Hz tone
         window.listen = async () => {
             let heard
             let audioMessages = 0
-            const audio = client.subscribe("demo/tone", { codec: "pcm-48k" }, () => audioMessages++)
+            const audio = client.subscribe("demo/tone", { encoding: "pcm_48k" }, () => audioMessages++)
             try {
                 await audio.ready()
                 const element = document.createElement("audio")
@@ -129,7 +129,7 @@ try {
                 heard = {
                     peakHz: Math.round(peak * context.sampleRate / analyser.fftSize), peakDb: Math.round(spectrum[peak]),
                     messages: audioMessages, bytesReceived: inbound?.bytesReceived, totalAudioEnergy: inbound?.totalAudioEnergy,
-                    mimeType: stats.find((report) => report.id === inbound?.codecId)?.mimeType, codecErrors: audio.bridgeStats?.stats?.codecErrors, lastCodecError: audio.bridgeStats?.stats?.lastCodecError,
+                    mimeType: stats.find((report) => report.id === inbound?.codecId)?.mimeType, encodingErrors: audio.bridgeStats?.stats?.encodingErrors, lastEncodingError: audio.bridgeStats?.stats?.lastEncodingError,
                 }
                 context.close()
                 element.remove()
@@ -140,11 +140,11 @@ try {
             return heard
         }
 
-        // the bridge rejects an unknown name (listing its codecs) and reliable delivery of video
+        // the bridge rejects an unknown name (listing its encodings) and reliable delivery of video
         const rejection = (key, options) => client.subscribe(key, options, () => {}).ready().then(() => null, (error) => error.message)
-        out.unknownError = await rejection("demo/text", { codec: "text-lowercase" })
-        out.reliableVideoError = await rejection("demo/swatch", { codec: "rgb-swatch", delivery: "reliable" })
-        const raw = client._peer.createDataChannel(JSON.stringify({ type: "sub", key: "demo/text", id: 999999, opts: { codec: "text-lowercase" } }))
+        out.unknownError = await rejection("demo/text", { encoding: "text-lowercase" })
+        out.reliableVideoError = await rejection("demo/swatch", { encoding: "rgb_swatch", delivery: "reliable" })
+        const raw = client._peer.createDataChannel(JSON.stringify({ type: "sub", key: "demo/text", id: 999999, opts: { encoding: "text-lowercase" } }))
         out.rawClosed = await new Promise((resolve) => {
             raw.onclose = () => resolve(true)
             setTimeout(() => resolve(false), 5000)
@@ -153,32 +153,32 @@ try {
         return out
     }, { args: [bridge.url] })
     // one evaluate each: astral gives every evaluate a time limit
-    result.video = await page.evaluate(() => window.watch("rgb-swatch"))
-    result.av1 = await page.evaluate(() => window.watch("rgb-swatch-av1"))
+    result.video = await page.evaluate(() => window.watch("video-h264"))
+    result.av1 = await page.evaluate(() => window.watch("video-av1"))
     result.audio = await page.evaluate(() => window.listen())
     await page.evaluate(() => window.client.close())
     console.log(JSON.stringify(result))
 
-    check(JSON.stringify(result.codecs) === JSON.stringify([{ name: "pcm-48k", output: "audio" }, { name: "rgb-swatch", output: "video" }, { name: "rgb-swatch-av1", output: "video" }, { name: "text-uppercase", output: "data" }]),
-        `client sees the server's codecs (${JSON.stringify(result.codecs)})`)
+    check(JSON.stringify(result.encodings) === JSON.stringify([{ name: "pcm_48k", output: "audio" }, { name: "rgb_swatch", output: "video" }, { name: "text_uppercase", output: "data" }]),
+        `client sees the server's encodings (${JSON.stringify(result.encodings)})`)
     const upper = text.toUpperCase()
-    check(result.full.decoded === upper, `data codec: registered decoder got "${result.full.decoded}" (expected "${upper}")`)
+    check(result.full.decoded === upper, `data encoding: registered decoder got "${result.full.decoded}" (expected "${upper}")`)
     const half = [...upper].slice(0, Math.ceil([...upper].length * 0.5)).join("")
-    check(result.reduced.decoded === half, `data codec at maxQuality 0.5: "${result.reduced.decoded}" (expected "${half}")`)
-    check(result.duplicateDecoder?.includes("already registered"), `client: a second decoder for the same codec throws (${result.duplicateDecoder})`)
-    for (const [video, mimeType, label] of [[result.video, "video/H264", "the bridge's H.264"], [result.av1, "video/AV1", "the application's own AV1 encoder"]]) {
+    check(result.reduced.decoded === half, `data encoding at encodeOptions.quality 0.5: "${result.reduced.decoded}" (expected "${half}")`)
+    check(result.duplicateDecoder?.includes("already registered"), `client: a second decoder for the same encoding throws (${result.duplicateDecoder})`)
+    for (const [video, mimeType, label] of [[result.video, "video/H264", "the bridge's H.264"], [result.av1, "video/AV1", "the application's own AV1 encoder (ServerBuilder::video_encoder)"]]) {
         const worst = video.error ? Infinity : Math.max(...video.mean.map((value, channel) => Math.abs(value - swatch[channel])))
-        check(!video.error && video.width === 64 && video.height === 48 && worst <= 20 && video.frames > 0 && video.decodeErrors === 0 && video.codecErrors === 0 && video.mimeType === mimeType,
-            `video codec through ${label}: ${video.mimeType}, ${video.width}x${video.height}, mean color ${JSON.stringify(video.mean)} within 20 of ${JSON.stringify(swatch)} (${video.frames} frames, ${video.framesDecoded} decoded${video.error ? `, error ${video.error}` : ""}${video.lastCodecError ? `, ${video.lastCodecError}` : ""})`)
-        check(video.metadata?.sourceWidth === 64 && video.metadata?.sourceHeight === 48, `video codec through ${label}: per-frame metadata (${JSON.stringify(video.metadata)})`)
+        check(!video.error && video.width === 64 && video.height === 48 && worst <= 20 && video.frames > 0 && video.decodeErrors === 0 && video.encodingErrors === 0 && video.mimeType === mimeType,
+            `video through ${label}: ${video.mimeType}, ${video.width}x${video.height}, mean color ${JSON.stringify(video.mean)} within 20 of ${JSON.stringify(swatch)} (${video.frames} frames, ${video.framesDecoded} decoded${video.error ? `, error ${video.error}` : ""}${video.lastEncodingError ? `, ${video.lastEncodingError}` : ""})`)
+        check(video.metadata?.sourceWidth === 64 && video.metadata?.sourceHeight === 48, `video through ${label}: per-frame metadata (${JSON.stringify(video.metadata)})`)
     }
     const audio = result.audio
-    check(!audio.error && audio.mimeType === "audio/opus" && Math.abs(audio.peakHz - toneHz) <= 20 && audio.peakDb > -60 && audio.totalAudioEnergy > 0 && audio.codecErrors === 0,
-        `audio codec: Opus track, the page hears the ${toneHz} Hz tone (peak ${audio.peakHz} Hz at ${audio.peakDb} dB, ${audio.bytesReceived} bytes, energy ${audio.totalAudioEnergy?.toFixed(3)}, ${audio.messages} messages${audio.error ? `, error ${audio.error}` : ""}${audio.lastCodecError ? `, ${audio.lastCodecError}` : ""})`)
-    check(result.unknownError?.includes("unknown codec") && result.unknownError.includes("text-uppercase") && result.unknownError.includes("rgb-swatch"), `bridge: an unknown codec is rejected, naming the server's codecs (${result.unknownError})`)
-    check(result.reliableVideoError?.includes("video codec"), `bridge: reliable delivery with a video codec is rejected (${result.reliableVideoError})`)
-    const bridgeRefusal = await bridge.output.waitFor((line) => line.includes("unknown codec") && line.includes("text-uppercase"), 3000).catch(() => null)
-    check(result.rawClosed && bridgeRefusal !== null, `bridge: unknown codec refused, listing the external codecs (${bridgeRefusal?.replace(/.*rejected/, "rejected")})`)
+    check(!audio.error && audio.mimeType === "audio/opus" && Math.abs(audio.peakHz - toneHz) <= 20 && audio.peakDb > -60 && audio.totalAudioEnergy > 0 && audio.encodingErrors === 0,
+        `audio encoding: Opus track, the page hears the ${toneHz} Hz tone (peak ${audio.peakHz} Hz at ${audio.peakDb} dB, ${audio.bytesReceived} bytes, energy ${audio.totalAudioEnergy?.toFixed(3)}, ${audio.messages} messages${audio.error ? `, error ${audio.error}` : ""}${audio.lastEncodingError ? `, ${audio.lastEncodingError}` : ""})`)
+    check(result.unknownError?.includes("unknown encoding") && result.unknownError.includes("text_uppercase") && result.unknownError.includes("rgb_swatch"), `bridge: an unknown encoding is rejected, naming the server's encodings (${result.unknownError})`)
+    check(result.reliableVideoError?.includes("lossy"), `bridge: reliable delivery on a video channel is rejected (${result.reliableVideoError})`)
+    const bridgeRefusal = await bridge.output.waitFor((line) => line.includes("unknown encoding") && line.includes("text_uppercase"), 3000).catch(() => null)
+    check(result.rawClosed && bridgeRefusal !== null, `bridge: an unknown encoding is refused, listing the external ones (${bridgeRefusal?.replace(/.*rejected/, "rejected")})`)
 } catch (error) {
     check(false, String(error))
     console.error(error)

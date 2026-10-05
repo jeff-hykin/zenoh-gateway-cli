@@ -1,6 +1,6 @@
 [package]
 name = "zenoh-web-cli"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 rust-version = "1.88"
 description = "The zenoh-web command: zenoh-web with the ROS 2 / dimos codecs"
@@ -15,24 +15,24 @@ name = "zenoh-web"
 path = "src/main.rs"
 
 [dependencies]
-zenoh-web = { version = "0.4.1", git = "https://github.com/jeff-hykin/zenoh-web", rev = "63b72ddd507fd31cd91dc1c3cc350336ebe08b89" }
+zenoh-web = { version = "0.5.0", git = "https://github.com/jeff-hykin/zenoh-web", rev = "63b72ddd507fd31cd91dc1c3cc350336ebe08b89", features = ["cloudflare"] }
 # the codecs, and the hardware video encoders picked at startup (GStreamer is loaded at runtime, so building needs none)
-zenoh-dimos-codecs = { version = "0.2.0", git = "https://github.com/jeff-hykin/zenoh-dimos-codecs", rev = "013142da5ba4777a6d00993acc85148d0fe674ce", features = ["videotoolbox", "gstreamer"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
-clap = { version = "4", features = ["derive"] }
+zenoh-dimos-codecs = { version = "0.3.0", git = "https://github.com/jeff-hykin/zenoh-dimos-codecs", rev = "013142da5ba4777a6d00993acc85148d0fe674ce", features = ["videotoolbox", "gstreamer"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "process"] }
+clap = { version = "4", features = ["derive", "env"] }
 anyhow = "1"
 log = "0.4"
 env_logger = "0.11"
 serde = { version = "1", features = ["derive"] }
 json5 = "0.4"
+serde_json = "1"
 
 # the e2e suites' zenoh peer and the external-codec server (examples/)
 [dev-dependencies]
 # tests/zenoh_signalling.rs connects to the command the way zenoh-web-relay does
-zenoh-web = { version = "0.4.1", git = "https://github.com/jeff-hykin/zenoh-web", rev = "63b72ddd507fd31cd91dc1c3cc350336ebe08b89", features = ["client"] }
+zenoh-web = { version = "0.5.0", git = "https://github.com/jeff-hykin/zenoh-web", rev = "63b72ddd507fd31cd91dc1c3cc350336ebe08b89", features = ["client"] }
 zenoh = "=1.6.2"
 zenoh-ext = { version = "=1.6.2", features = ["unstable"] }
-serde_json = "1"
 # custom_codec's AV1 encoder (an application's own encoder, as a hardware one would plug in)
 rav1e = { version = "0.8", default-features = false, features = ["threading"] }
 

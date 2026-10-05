@@ -1,5 +1,5 @@
 // zenoh-web example: no build step, the TypeScript client comes transpiled from esm.sh; depth and
-// point clouds arrive as fields the client decodes, so no codec code is needed.
+// point clouds arrive as fields the client decodes, so no decoding code is needed.
 // Query params: ?bridge=<url> (default: this page's origin), ?client=<module url> (e.g. a local bundle).
 
 const defaultClientUrl = "https://esm.sh/gh/jeff-hykin/zenoh-web@fb465e704544008095a00b5416d68b6abc91147c/client/zenoh_web.ts"
@@ -33,24 +33,24 @@ function formatNumber(value, digits = 1) {
 }
 
 /**
- * Suggests a codec from the key's type part (ROS 2 `...::msg::dds_::Image_/...`, dimos `.../sensor_msgs.Image`).
+ * Suggests a message encoding from the key's type part (ROS 2 `...::msg::dds_::Image_/...`, dimos `.../sensor_msgs.Image`).
  * Depth vs color is only a guess from the topic name; change it in the select.
  * @param {string} key
  */
-function guessCodec(key) {
-    const protocol = key.includes("::msg::dds_::") ? "ros2" : key.includes("sensor_msgs.") ? "dimos" : null
+function guessEncoding(key) {
+    const protocol = key.includes("::msg::dds_::") ? "ros2" : key.includes("sensor_msgs.") ? "dimos_lcm" : null
     if (protocol === null) {
         return ""
     }
     const looksLikeDepth = /depth/i.test(key)
     if (key.includes("PointCloud2")) {
-        return `${protocol}-pointcloud2`
+        return `${protocol}_pointcloud2`
     }
     if (key.includes("CompressedImage")) {
-        return looksLikeDepth ? `${protocol}-compressed-depth` : `${protocol}-compressed-image`
+        return looksLikeDepth ? `${protocol}_compressed_depth` : `${protocol}_compressed_image`
     }
     if (key.includes("Image")) {
-        return looksLikeDepth ? `${protocol}-depth` : `${protocol}-image`
+        return looksLikeDepth ? `${protocol}_depth` : `${protocol}_image`
     }
     return ""
 }
@@ -83,7 +83,8 @@ window.zenohWebExample = { client, streams }
 const topicListElement = byId("topic-list")
 const topicStatusElement = byId("topic-status")
 const subscribeKeyElement = byId("subscribe-key")
-const subscribeCodecElement = byId("subscribe-codec")
+const subscribeEncodingElement = byId("subscribe-encoding")
+const subscribeChannelElement = byId("subscribe-channel")
 
 async function refreshTopics() {
     const filter = byId("topic-filter").value.trim() || "**"
@@ -102,7 +103,7 @@ async function refreshTopics() {
             button.append(sources)
             button.addEventListener("click", () => {
                 subscribeKeyElement.value = topic.key
-                subscribeCodecElement.value = guessCodec(topic.key)
+                subscribeEncodingElement.value = guessEncoding(topic.key)
             })
             item.append(button)
             return item
@@ -116,9 +117,10 @@ byId("refresh-topics").addEventListener("click", refreshTopics)
 
 // ---------------------------------------------------------------- subscribe form
 
-subscribeCodecElement.append(new Option("raw (no codec)", ""), ...client.codecs.map(({ name }) => new Option(name, name)))
+subscribeEncodingElement.append(new Option("raw (no encoding)", ""), ...client.encodings.map(({ name }) => new Option(name, name)))
+subscribeChannelElement.append(new Option("default channel", ""), ...["video-h264", "video-av1", "video-vp8", "video-vp9", "audio-opus", "data"].map((channel) => new Option(channel, channel)))
 subscribeKeyElement.addEventListener("change", () => {
-    subscribeCodecElement.value = guessCodec(subscribeKeyElement.value)
+    subscribeEncodingElement.value = guessEncoding(subscribeKeyElement.value)
 })
 byId("subscribe-button").addEventListener("click", () => {
     const key = subscribeKeyElement.value.trim()
@@ -129,7 +131,7 @@ byId("subscribe-button").addEventListener("click", () => {
         return
     }
     try {
-        streams.add(new Stream(key, subscribeCodecElement.value || null))
+        streams.add(new Stream(key, subscribeEncodingElement.value || null, subscribeChannelElement.value || null))
     } catch (error) {
         errorElement.textContent = error.message
     }
@@ -321,17 +323,19 @@ const priorityNames = Object.fromEntries(Object.entries(Priority).map(([name, va
 
 /** One subscription card; changing a control re-subscribes with the new options. */
 class Stream {
-    /** @param {string} key @param {string | null} codec */
-    constructor(key, codec) {
+    /** @param {string} key @param {string | null} encoding @param {string | null} channel */
+    constructor(key, encoding, channel) {
         this.key = key
-        this.codec = codec
+        this.encoding = encoding
+        this.channel = channel
         // "video", "fields" (shown as "depth" or "pointcloud" once the first message says which), "data" or "raw"
-        this.output = codec ? client.codecs.find(({ name }) => name === codec)?.output ?? "data" : "raw"
+        const defaultOutput = encoding ? client.encodings.find(({ name }) => name === encoding)?.output ?? "data" : "raw"
+        this.output = channel === null ? defaultOutput : channel.startsWith("video-") ? "video" : channel === "audio-opus" ? "audio" : defaultOutput === "fields" ? "fields" : encoding ? "data" : "raw"
         this.element = streamTemplate.content.firstElementChild.cloneNode(true)
         this.element.dataset.key = key
         this.element.dataset.output = this.output
         this.element.querySelector(".key").textContent = key
-        this.element.querySelector(".codec").textContent = codec ?? "raw"
+        this.element.querySelector(".encoding").textContent = [encoding ?? "raw", channel].filter(Boolean).join(" on ")
         this.errorElement = this.element.querySelector(".stream-error")
         this.statsElement = this.element.querySelector(".stream-stats")
         this.element.querySelector(".close").addEventListener("click", () => this.close())
@@ -361,8 +365,8 @@ class Stream {
             show()
             control.addEventListener("input", show)
             control.addEventListener("change", () => this.#subscribe())
-            // quality only applies to transcoded streams
-            if (this.output === "raw" && control.name.endsWith("Quality")) {
+            // quality only applies to encoded streams
+            if (this.output === "raw" && (control.name === "minQuality" || control.name === "quality")) {
                 control.disabled = true
             }
         }
@@ -376,10 +380,13 @@ class Stream {
             bandwidthPriority: Number(values.bandwidthPriority),
             qualityToHzTradeoff: Number(values.qualityToHzTradeoff),
         }
-        if (this.codec) {
-            options.codec = this.codec
-            options.minQuality = Math.min(Number(values.minQuality), Number(values.maxQuality))
-            options.maxQuality = Number(values.maxQuality)
+        if (this.encoding) {
+            options.encoding = this.encoding
+            options.minQuality = Math.min(Number(values.minQuality), Number(values.quality))
+            options.encodeOptions = { quality: Number(values.quality) }
+        }
+        if (this.channel) {
+            options.channel = this.channel
         }
         if (Number(values.maxHz) > 0) {
             options.maxHz = Number(values.maxHz)

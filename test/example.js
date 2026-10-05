@@ -5,7 +5,7 @@
 // Usage: deno run --allow-all test/example.js   (UPDATE_SCREENSHOT=1 to refresh the README's test/artifacts/example.png)
 
 import { $ } from "https://esm.sh/dax-sh@0.42.0"
-import { bridgeDir, check, finish, fixtureKey, fixturesDir, launchBrowser, loadManifest, machineLoad, repoRoot, startBridge, startPeer } from "./harness.js"
+import { bridgeDir, buildAll, check, finish, fixtureKey, fixturesDir, launchBrowser, loadManifest, machineLoad, repoRoot, startBridge, startPeer } from "./harness.js"
 
 const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-web-example-" }))
 // the README screenshot is only rewritten on request, so a test run leaves the repo clean
@@ -22,9 +22,9 @@ const entryFor = (file) => {
     return entry
 }
 const streams = [
-    { name: "video", file: "dimos/image_rgb8.bin", codec: "dimos-image" },
-    { name: "pointcloud", file: "dimos/pointcloud_xyzi.bin", codec: "dimos-pointcloud2" },
-    { name: "depth", file: "dimos/depth_16UC1.bin", codec: "dimos-depth" },
+    { name: "video", file: "dimos/image_rgb8.bin", encoding: "dimos_lcm_image" },
+    { name: "pointcloud", file: "dimos/pointcloud_xyzi.bin", encoding: "dimos_lcm_pointcloud2" },
+    { name: "depth", file: "dimos/depth_16UC1.bin", encoding: "dimos_lcm_depth" },
 ].map((stream) => ({ ...stream, key: fixtureKey(entryFor(stream.file)) }))
 const rawKey = "example/raw"
 
@@ -35,7 +35,16 @@ try {
         ...streams.flatMap((stream) => ["--publish", `${stream.key}=${fixturesDir.join(stream.file)}@10`]),
         "--synthetic", `${rawKey}=1500@20`,
     ])
-    const bridge = await startBridge(scratch, peer.zenohPort, repoRoot.join("examples/web"))
+    // ZW_LOCAL_CLIENT=1: the page uses zenoh-web's client from the checkout cargo builds (before it is pushed)
+    const localClient = Deno.env.get("ZW_LOCAL_CLIENT") === "1"
+    let webDir = repoRoot.join("examples/web")
+    if (localClient) {
+        webDir = await buildAll(scratch)
+        for (const entry of repoRoot.join("examples/web").readDirSync()) {
+            repoRoot.join("examples/web", entry.name).copyFileSync(webDir.join(entry.name))
+        }
+    }
+    const bridge = await startBridge(scratch, peer.zenohPort, webDir)
     await $.sleep(1000)
 
     const browser = await launchBrowser()
@@ -50,7 +59,7 @@ try {
     page.addEventListener("pageerror", (event) => consoleErrors.push(`uncaught: ${event.detail?.message ?? event.detail}`))
     await page.setViewportSize({ width: 1400, height: 1100 })
     $.logStep(`opening ${bridge.url}/index.html (client from esm.sh)`)
-    await page.goto(`${bridge.url}/index.html`)
+    await page.goto(`${bridge.url}/index.html${localClient ? "?client=/client/zenoh_web.js" : ""}`)
 
     const connected = await page.evaluate(async () => {
         for (let attempt = 0; attempt < 150; attempt++) {
@@ -81,20 +90,20 @@ try {
     $.logStep("adding streams through the form")
     const added = await page.evaluate((streams, rawKey) => {
         const keyInput = document.getElementById("subscribe-key")
-        const codecSelect = document.getElementById("subscribe-codec")
+        const codecSelect = document.getElementById("subscribe-encoding")
         const guesses = {}
-        for (const stream of [...streams, { name: "raw", key: rawKey, codec: "" }]) {
+        for (const stream of [...streams, { name: "raw", key: rawKey, encoding: "" }]) {
             keyInput.value = stream.key
             keyInput.dispatchEvent(new Event("change"))
             guesses[stream.name] = codecSelect.value
-            codecSelect.value = stream.codec
+            codecSelect.value = stream.encoding
             document.getElementById("subscribe-button").click()
         }
         return { guesses, cards: document.querySelectorAll("#streams .stream").length, error: document.getElementById("subscribe-error").textContent }
     }, { args: [streams, rawKey] })
     console.log(JSON.stringify(added))
     check(added.cards === 4 && added.error === "", "four stream cards added")
-    check(streams.every((stream) => added.guesses[stream.name] === stream.codec) && added.guesses.raw === "", "the codec select guesses each key's codec (none for a non-image key)")
+    check(streams.every((stream) => added.guesses[stream.name] === stream.encoding) && added.guesses.raw === "", "the encoding select guesses each key's encoding (none for a non-image key)")
 
     $.logStep("waiting for video frames, points, depth and raw rate")
     const rendered = await page.evaluate(async () => {
@@ -156,7 +165,7 @@ try {
     $.logStep("changing a control re-subscribes with the new options")
     const controlled = await page.evaluate(async () => {
         const card = document.querySelector('#streams .stream[data-output="pointcloud"]')
-        const slider = card.querySelector('input[name="maxQuality"]')
+        const slider = card.querySelector('input[name="quality"]')
         slider.value = "0.5"
         slider.dispatchEvent(new Event("input"))
         slider.dispatchEvent(new Event("change"))
@@ -166,10 +175,10 @@ try {
             await new Promise((resolve) => setTimeout(resolve, 200))
         }
         await new Promise((resolve) => setTimeout(resolve, 1500))
-        return { maxQuality: stream.subscription.options.maxQuality, state: stream.subscription.state, received: stream.subscription.received }
+        return { maxQuality: stream.subscription.options.encodeOptions?.quality, state: stream.subscription.state, received: stream.subscription.received }
     })
     console.log(JSON.stringify(controlled))
-    check(controlled.maxQuality === 0.5 && controlled.state === "open" && controlled.received > 0, "maxQuality slider re-subscribes and points keep arriving")
+    check(controlled.maxQuality === 0.5 && controlled.state === "open" && controlled.received > 0, "the quality slider re-subscribes (encodeOptions.quality) and points keep arriving")
 
     // the table re-renders once a second; the re-subscription briefly removed a key
     const stats = await page.evaluate(async () => {
