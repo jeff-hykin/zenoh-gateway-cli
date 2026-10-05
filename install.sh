@@ -1,14 +1,14 @@
 #!/bin/sh
-# Installs the zenoh-web binary from a GitHub release.
-#   curl -fsSL https://raw.githubusercontent.com/jeff-hykin/zenoh-web-cli/main/install.sh | sh
-# env: ZENOH_WEB_VERSION (e.g. v0.3.0; default: latest release), ZENOH_WEB_INSTALL_DIR (default: ~/.local/bin)
+# Installs the zenoh-gateway binary from a GitHub release.
+#   curl -fsSL https://raw.githubusercontent.com/jeff-hykin/zenoh-gateway-cli/main/install.sh | sh
+# env: ZENOH_GATEWAY_VERSION (e.g. v0.3.0; default: latest release), ZENOH_GATEWAY_INSTALL_DIR (default: ~/.local/bin)
 set -eu
 
-repo="jeff-hykin/zenoh-web-cli"
-install_dir="${ZENOH_WEB_INSTALL_DIR:-$HOME/.local/bin}"
+repo="jeff-hykin/zenoh-gateway-cli"
+install_dir="${ZENOH_GATEWAY_INSTALL_DIR:-$HOME/.local/bin}"
 
 fail() {
-    echo "zenoh-web install: $*" >&2
+    echo "zenoh-gateway install: $*" >&2
     exit 1
 }
 
@@ -34,7 +34,7 @@ else
     fail "needs curl or wget"
 fi
 
-version="${ZENOH_WEB_VERSION:-}"
+version="${ZENOH_GATEWAY_VERSION:-}"
 if [ -z "$version" ]; then
     version="$(fetch_stdout "https://api.github.com/repos/$repo/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)"
     [ -n "$version" ] || fail "could not find the latest release of $repo"
@@ -44,7 +44,7 @@ case "$version" in
     *) version="v$version" ;;
 esac
 
-archive="zenoh-web-${version#v}-$target.tar.gz"
+archive="zenoh-gateway-${version#v}-$target.tar.gz"
 base_url="https://github.com/$repo/releases/download/$version"
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT INT TERM
@@ -65,14 +65,14 @@ fi
 [ "$expected" = "$actual" ] || fail "checksum mismatch for $archive (expected $expected, got $actual)"
 
 tar -xzf "$work_dir/$archive" -C "$work_dir"
-binary="$(find "$work_dir" -type f -name zenoh-web | head -n 1)"
-[ -n "$binary" ] || fail "no zenoh-web binary inside $archive"
+binary="$(find "$work_dir" -type f -name zenoh-gateway | head -n 1)"
+[ -n "$binary" ] || fail "no zenoh-gateway binary inside $archive"
 mkdir -p "$install_dir"
 # install to a temp name then rename, so replacing a running binary is safe
-cp "$binary" "$install_dir/.zenoh-web.tmp"
-chmod 755 "$install_dir/.zenoh-web.tmp"
-mv -f "$install_dir/.zenoh-web.tmp" "$install_dir/zenoh-web"
-echo "installed $install_dir/zenoh-web ($version, $target)"
+cp "$binary" "$install_dir/.zenoh-gateway.tmp"
+chmod 755 "$install_dir/.zenoh-gateway.tmp"
+mv -f "$install_dir/.zenoh-gateway.tmp" "$install_dir/zenoh-gateway"
+echo "installed $install_dir/zenoh-gateway ($version, $target)"
 
 case ":$PATH:" in
     *":$install_dir:"*) ;;

@@ -1,4 +1,4 @@
-//! The `zenoh-web` command: [zenoh_web::Server] with the [zenoh_dimos_codecs] message encodings registered.
+//! The `zenoh-gateway` command: [zenoh_gateway::Server] with the [zenoh_dimos_codecs] message encodings registered.
 
 use clap::Parser;
 use log::{info, warn};
@@ -7,13 +7,13 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
-use zenoh_web::{Grant, IceServer};
+use zenoh_gateway::{Grant, IceServer};
 
 #[derive(Parser, Debug)]
-#[command(name = "zenoh-web", version, about = "A gateway from zenoh to browsers over WebRTC: data channels, video and audio tracks")]
+#[command(name = "zenoh-gateway", version, about = "A gateway from zenoh to browsers over WebRTC: data channels, video and audio tracks")]
 struct Cli {
     /// HTTP port for signaling (POST /offer) and static files.
-    #[arg(long, default_value_t = zenoh_web::DEFAULT_PORT)]
+    #[arg(long, default_value_t = zenoh_gateway::DEFAULT_PORT)]
     port: u16,
     /// zenoh config file (json5).
     #[arg(long)]
@@ -43,7 +43,7 @@ struct Cli {
     #[arg(long)]
     turn_secret: Option<String>,
     /// Command that mints STUN/TURN servers for each end of each connection, added after --ice-server: run with sh -c,
-    /// with ZENOH_WEB_ICE_SIDE=browser|gateway and ZENOH_WEB_ICE_TOKEN (the connection's token, if any); it prints
+    /// with ZENOH_GATEWAY_ICE_SIDE=browser|gateway and ZENOH_GATEWAY_ICE_TOKEN (the connection's token, if any); it prints
     /// {"iceServers": [...]} or [...] (RTCIceServer objects). On failure, or after 5 s, that end gets only --ice-server.
     #[arg(long, conflicts_with = "cloudflare_turn_key_id")]
     ice_servers_command: Option<String>,
@@ -66,8 +66,8 @@ struct Cli {
     /// else software), software (openh264), videotoolbox or gstreamer.
     #[arg(long, default_value = "auto")]
     video_encoder: zenoh_dimos_codecs::encoders::Backend,
-    /// Also answer WebRTC signalling over zenoh as <name> (queryables zenoh-web/<name>/offer and /ice), so a
-    /// zenoh-web-relay this gateway's zenoh dials out to (--connect) can reach it with no inbound port.
+    /// Also answer WebRTC signalling over zenoh as <name> (queryables zenoh-gateway/<name>/offer and /ice), so a
+    /// zenoh-gateway-relay this gateway's zenoh dials out to (--connect) can reach it with no inbound port.
     #[arg(long)]
     zenoh_signalling: Option<String>,
     /// Serve no HTTP (no --port listener): signalling only over zenoh (needs --zenoh-signalling).
@@ -115,7 +115,7 @@ fn load_auth_file(path: &Path) -> anyhow::Result<Auth> {
 }
 
 /// Polls the auth file; tokens removed or changed there are revoked.
-async fn watch_auth_file(path: PathBuf, tokens: Arc<RwLock<HashMap<String, Grant>>>, server: zenoh_web::Server) {
+async fn watch_auth_file(path: PathBuf, tokens: Arc<RwLock<HashMap<String, Grant>>>, server: zenoh_gateway::Server) {
     let modified = |path: &Path| std::fs::metadata(path).and_then(|meta| meta.modified()).ok();
     let mut last = modified(&path);
     loop {
@@ -152,7 +152,7 @@ fn ice_server(arg: &str) -> IceServer {
 }
 
 /// `--ice-servers-command`: runs `command` for `request`, and reads `{"iceServers": [...]}` or `[...]` from its stdout.
-async fn command_ice_servers(command: &str, request: zenoh_web::IceRequest) -> anyhow::Result<Vec<IceServer>> {
+async fn command_ice_servers(command: &str, request: zenoh_gateway::IceRequest) -> anyhow::Result<Vec<IceServer>> {
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum Printed {
@@ -163,13 +163,13 @@ async fn command_ice_servers(command: &str, request: zenoh_web::IceRequest) -> a
         Bare(Vec<IceServer>),
     }
     let side = match request.side {
-        zenoh_web::IceSide::Browser => "browser",
-        zenoh_web::IceSide::Gateway => "gateway",
+        zenoh_gateway::IceSide::Browser => "browser",
+        zenoh_gateway::IceSide::Gateway => "gateway",
     };
     let output = tokio::process::Command::new("sh")
         .args(["-c", command])
-        .env("ZENOH_WEB_ICE_SIDE", side)
-        .env("ZENOH_WEB_ICE_TOKEN", request.token.unwrap_or_default())
+        .env("ZENOH_GATEWAY_ICE_SIDE", side)
+        .env("ZENOH_GATEWAY_ICE_TOKEN", request.token.unwrap_or_default())
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true)
         .output()
@@ -200,9 +200,9 @@ async fn terminated() {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,zenoh=warn,zenoh_ext=warn,zenoh_web=info,rtc=warn,webrtc=warn")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,zenoh=warn,zenoh_ext=warn,zenoh_gateway=info,rtc=warn,webrtc=warn")).init();
     let cli = Cli::parse();
-    let mut builder = zenoh_web::Server::builder().bandwidth_target_fraction(cli.bandwidth_target_fraction);
+    let mut builder = zenoh_gateway::Server::builder().bandwidth_target_fraction(cli.bandwidth_target_fraction);
     let video = zenoh_dimos_codecs::encoders::select(cli.video_encoder)?;
     info!("video encoder: {}", video.name);
     if let Some(factory) = video.factory {
@@ -236,7 +236,7 @@ async fn main() -> anyhow::Result<()> {
     }
     if let (Some(key_id), Some(api_token)) = (cli.cloudflare_turn_key_id, cli.cloudflare_turn_api_token) {
         info!("TURN credentials from Cloudflare (key {key_id}, ttl {} s{})", cli.cloudflare_turn_ttl, if cli.cloudflare_turn_per_connection { ", per connection" } else { "" });
-        let turn = zenoh_web::CloudflareTurn::new(key_id, api_token).ttl(Duration::from_secs(cli.cloudflare_turn_ttl)).per_connection(cli.cloudflare_turn_per_connection);
+        let turn = zenoh_gateway::CloudflareTurn::new(key_id, api_token).ttl(Duration::from_secs(cli.cloudflare_turn_ttl)).per_connection(cli.cloudflare_turn_per_connection);
         builder = builder.cloudflare_turn(turn);
     }
     if let Some(ports) = &cli.udp_ports {

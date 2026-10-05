@@ -1,24 +1,24 @@
 {
-    description = "zenoh-web-cli: the zenoh-web command (zenoh <-> WebRTC bridge for browsers, with the ROS 2 / dimos codecs)";
+    description = "zenoh-gateway-cli: the zenoh-gateway command (zenoh <-> WebRTC bridge for browsers, with the ROS 2 / dimos codecs)";
 
     inputs = {
-        # lib.crossRust (crate2nix + zig) and its nixpkgs / rust-overlay pins, so crates are shared with the other zenoh-web flakes
-        zenoh-web.url = "github:jeff-hykin/zenoh-web";
-        nixpkgs.follows = "zenoh-web/nixpkgs";
-        rust-overlay.follows = "zenoh-web/rust-overlay";
+        # lib.crossRust (crate2nix + zig) and its nixpkgs / rust-overlay pins, so crates are shared with the other zenoh-gateway flakes
+        zenoh-gateway.url = "github:jeff-hykin/zenoh-gateway";
+        nixpkgs.follows = "zenoh-gateway/nixpkgs";
+        rust-overlay.follows = "zenoh-gateway/rust-overlay";
     };
 
-    outputs = { self, zenoh-web, nixpkgs, rust-overlay }:
+    outputs = { self, zenoh-gateway, nixpkgs, rust-overlay }:
         let
             lib = nixpkgs.lib;
-            pname = "zenoh-web";
+            pname = "zenoh-gateway";
             version = "0.4.0";
             darwinX86Target = "x86_64-apple-darwin";
 
             perSystem = system:
                 let
-                    # zenoh-web (native), zenoh-web-aarch64-linux, zenoh-web-x86_64-linux: crate2nix, one derivation per crate
-                    built = zenoh-web.lib.crossRustPackages { name = pname; inherit system; cargoNix = ./Cargo.nix; };
+                    # zenoh-gateway (native), zenoh-gateway-aarch64-linux, zenoh-gateway-x86_64-linux: crate2nix, one derivation per crate
+                    built = zenoh-gateway.lib.crossRustPackages { name = pname; inherit system; cargoNix = ./Cargo.nix; };
                     native = built.${pname};
                     pkgs = import nixpkgs { inherit system; overlays = [ rust-overlay.overlays.default ]; };
                     isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
@@ -57,8 +57,8 @@
                             meta.mainProgram = pname;
                         };
 
-                    # all four release binaries as result/<target-triple>/zenoh-web, plus the release assets:
-                    # result/dist/zenoh-web-<version>-<target-triple>.tar.gz (binary + README.md) and SHA256SUMS.
+                    # all four release binaries as result/<target-triple>/zenoh-gateway, plus the release assets:
+                    # result/dist/zenoh-gateway-<version>-<target-triple>.tar.gz (binary + README.md) and SHA256SUMS.
                     # GNU tar in the sandbox: no macOS xattrs/AppleDouble files, fixed owner and mtime.
                     release = pkgs.runCommand "${pname}-release-${version}" { nativeBuildInputs = [ pkgs.gnutar pkgs.gzip ]; } (lib.concatMapStrings (entry: ''
                         install -Dm755 ${entry.package}/bin/${pname} $out/${entry.target}/${pname}
@@ -83,11 +83,11 @@
                     apps.default = { type = "app"; program = "${native}/bin/${pname}"; };
                 };
 
-            outputsBySystem = zenoh-web.lib.eachSystem perSystem;
+            outputsBySystem = zenoh-gateway.lib.eachSystem perSystem;
         in {
             packages = lib.mapAttrs (system: outputs: outputs.packages) outputsBySystem;
             apps = lib.mapAttrs (system: outputs: outputs.apps) outputsBySystem;
             # rust (with the Linux targets), crate2nix, deno
-            devShells = zenoh-web.devShells;
+            devShells = zenoh-gateway.devShells;
         };
 }

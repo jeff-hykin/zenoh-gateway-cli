@@ -5,7 +5,7 @@
 import { $ } from "https://esm.sh/dax-sh@0.42.0"
 import { buildAll, check, finish, freePort, killOnCleanup, launchBrowser, machineLoad, startBridge, startPeer } from "./harness.js"
 
-const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-web-auth-" }))
+const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-gateway-auth-" }))
 console.log(`machine load at start: ${await machineLoad()}`)
 
 const tokens = {
@@ -33,13 +33,13 @@ try {
 
     $.logStep("tokens and grants")
     const grants = await page.evaluate(async (bridgeUrl) => {
-        const { connect } = await import("/client/zenoh_web.js")
+        const { connect } = await import("/client/zenoh_gateway.js")
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
         const outcome = (promise) => promise.then(() => "accepted", (error) => error.message)
         const out = {}
         out.noToken = await outcome(connect(bridgeUrl, { reconnect: false }))
         out.badToken = await outcome(connect(bridgeUrl, { token: "nope", reconnect: false }))
-        out.iceNoToken = (await fetch(`${bridgeUrl}/zenoh-web/ice`)).status
+        out.iceNoToken = (await fetch(`${bridgeUrl}/zenoh-gateway/ice`)).status
 
         const reader = await connect(bridgeUrl, { token: "reader" })
         let received = 0
@@ -70,7 +70,7 @@ try {
     console.log("grants:", JSON.stringify(grants))
     check(grants.noToken.includes("gateway refused the token") && grants.noToken.includes("a token is required"), `no token is refused when auth is required (${grants.noToken})`)
     check(grants.badToken.includes("unknown token"), `an unknown token is refused (${grants.badToken})`)
-    check(grants.iceNoToken === 401, `GET /zenoh-web/ice needs the token too (${grants.iceNoToken})`)
+    check(grants.iceNoToken === 401, `GET /zenoh-gateway/ice needs the token too (${grants.iceNoToken})`)
     check(grants.readerSub === "accepted" && grants.readerReceived > 5, `a read token subscribes (${grants.readerSub}, ${grants.readerReceived} messages)`)
     check(grants.readerPub.includes("not authorized to publish \"test/frombrowser/reader\""), `a read token can't publish (${grants.readerPub})`)
     check(grants.readerGet === 1, "a read token queries")
@@ -82,7 +82,7 @@ try {
 
     $.logStep("revocation")
     const revoking = page.evaluate(async (bridgeUrl) => {
-        const { connect } = await import("/client/zenoh_web.js")
+        const { connect } = await import("/client/zenoh_gateway.js")
         const client = await connect(bridgeUrl, { token: "revokable" })
         const states = []
         client.onState((state) => states.push(state))
@@ -100,14 +100,14 @@ try {
     check(revokedLine, "removing a token from the auth file revokes its connection")
     check(revoked.state === "lost" && revoked.states.filter((state) => state === "connecting").length <= 1, `the revoked client is dropped and its reconnect refused (${revoked.states})`)
     const reconnect = await page.evaluate(async (bridgeUrl) => {
-        const { connect } = await import("/client/zenoh_web.js")
+        const { connect } = await import("/client/zenoh_gateway.js")
         return await connect(bridgeUrl, { token: "revokable", reconnect: false }).then(() => "accepted", (error) => error.message)
     }, { args: [bridge.url] })
     check(reconnect.includes("unknown token"), `a revoked token can't connect again (${reconnect})`)
 
     $.logStep("leases")
     const leases = await page.evaluate(async (bridgeUrl) => {
-        const { connect } = await import("/client/zenoh_web.js")
+        const { connect } = await import("/client/zenoh_gateway.js")
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
         const outcome = (promise) => promise.then(() => "accepted", (error) => error.message)
         const out = {}
@@ -194,7 +194,7 @@ try {
     if (turnserver) {
         const secret = "e2e-secret"
         // killed by finish(): a turnserver left behind keeps its ports and outlives the suite
-        killOnCleanup($`${turnserver} -n --listening-ip=${lanIp} --relay-ip=${lanIp} --listening-port=${turnPort} --use-auth-secret --static-auth-secret=${secret} --realm=zenoh-web --no-tls --no-dtls --allow-loopback-peers --cli-port=${freePort()} --min-port=49200 --max-port=49300 --log-file=${scratch.join("turnserver.log")}`
+        killOnCleanup($`${turnserver} -n --listening-ip=${lanIp} --relay-ip=${lanIp} --listening-port=${turnPort} --use-auth-secret --static-auth-secret=${secret} --realm=zenoh-gateway --no-tls --no-dtls --allow-loopback-peers --cli-port=${freePort()} --min-port=49200 --max-port=49300 --log-file=${scratch.join("turnserver.log")}`
             .stdout("null").stderr("null").noThrow().spawn())
         await $.sleep(1000)
         iceArgs = ["--ice-server", `turn:${lanIp}:${turnPort}?transport=udp`, "--turn-secret", secret, "--udp-ports", `${udpLow}-${udpLow + 4}`]
@@ -204,7 +204,7 @@ try {
     const iceBridge = await startBridge(scratch, peer.zenohPort, webRoot, iceArgs)
     await $.sleep(500)
     const ice = await page.evaluate(async (bridgeUrl, relayOnly) => {
-        const { connect } = await import("/client/zenoh_web.js")
+        const { connect } = await import("/client/zenoh_gateway.js")
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
         const client = await connect(bridgeUrl, relayOnly ? { iceTransportPolicy: "relay" } : {}).catch((error) => error)
         if (client instanceof Error) {
@@ -234,9 +234,9 @@ try {
 
     $.logStep("--ice-servers-command")
     const mintScript = scratch.join("mint_ice.sh")
-    mintScript.writeTextSync(`[ "$ZENOH_WEB_ICE_TOKEN" = broken ] && exit 3\nprintf '{"iceServers":[{"urls":["turn:minted.example:3478"],"username":"%s","credential":"%s"}]}' "$ZENOH_WEB_ICE_SIDE" "$ZENOH_WEB_ICE_TOKEN"\n`)
+    mintScript.writeTextSync(`[ "$ZENOH_GATEWAY_ICE_TOKEN" = broken ] && exit 3\nprintf '{"iceServers":[{"urls":["turn:minted.example:3478"],"username":"%s","credential":"%s"}]}' "$ZENOH_GATEWAY_ICE_SIDE" "$ZENOH_GATEWAY_ICE_TOKEN"\n`)
     const commandBridge = await startBridge(scratch, peer.zenohPort, webRoot, ["--ice-server", "stun:static.example:3478", "--ice-servers-command", `sh ${mintScript}`])
-    const iceFor = async (token) => (await (await fetch(`${commandBridge.url}/zenoh-web/ice`, { headers: { authorization: `Bearer ${token}` } })).json()).iceServers
+    const iceFor = async (token) => (await (await fetch(`${commandBridge.url}/zenoh-gateway/ice`, { headers: { authorization: `Bearer ${token}` } })).json()).iceServers
     const minted = await iceFor("abc")
     check(minted.length === 2 && minted[0].urls[0] === "stun:static.example:3478" && minted[1].urls[0] === "turn:minted.example:3478" && minted[1].username === "browser" && minted[1].credential === "abc", `the command's servers follow --ice-server, with the side and token (${JSON.stringify(minted)})`)
     const fallback = await iceFor("broken")
@@ -244,14 +244,14 @@ try {
 
     $.logStep("iceTransportPolicy from the ICE reply")
     const policies = await page.evaluate(async (bridgeUrl) => {
-        const { connect } = await import("/client/zenoh_web.js")
+        const { connect } = await import("/client/zenoh_gateway.js")
         const realFetch = window.fetch
         const RealPeer = window.RTCPeerConnection
         const seen = []
-        // a host app answering /zenoh-web/ice with a relay policy, as dimos-desktop does
+        // a host app answering /zenoh-gateway/ice with a relay policy, as dimos-desktop does
         window.fetch = async (input, init) => {
             const response = await realFetch(input, init)
-            if (!String(input).endsWith("/zenoh-web/ice")) {
+            if (!String(input).endsWith("/zenoh-gateway/ice")) {
                 return response
             }
             return new Response(JSON.stringify({ ...(await response.json()), iceTransportPolicy: "relay" }), { headers: { "content-type": "application/json" } })
@@ -284,7 +284,7 @@ try {
         const cloudflareBridge = await startBridge(scratch, peer.zenohPort, webRoot, ["--cloudflare-turn-key-id", cloudflareKey, "--cloudflare-turn-ttl", "600"])
         await $.sleep(500)
         const relayed = await page.evaluate(async (bridgeUrl) => {
-            const { connect } = await import("/client/zenoh_web.js")
+            const { connect } = await import("/client/zenoh_gateway.js")
             const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
             const client = await connect(bridgeUrl, { iceTransportPolicy: "relay" }).catch((error) => error)
             if (client instanceof Error) {

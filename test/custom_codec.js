@@ -1,15 +1,15 @@
 #!/usr/bin/env -S deno run --allow-all
-// Encodings from outside zenoh-web end-to-end: examples/custom_codec.rs embeds the server (library API,
+// Encodings from outside zenoh-gateway end-to-end: examples/custom_codec.rs embeds the server (library API,
 // the application's own zenoh session) with a data encoding, a video encoding (on the bridge's H.264, and on
 // video-av1 through the application's own AV1 encoder) and an audio encoding written in Rust; a real zenoh peer
 // publishes, headless Chrome subscribes with `encoding: "<custom>"`.
 // Usage: deno run --allow-all test/custom_codec.js
-// ZENOH_WEB_CUSTOM_CODEC_BIN=<path> runs another build of the same program (e.g. a downstream crate's).
+// ZENOH_GATEWAY_CUSTOM_CODEC_BIN=<path> runs another build of the same program (e.g. a downstream crate's).
 
 import { $ } from "https://esm.sh/dax-sh@0.42.0"
 import { bridgeDir, buildAll, check, finish, launchBrowser, machineLoad, startBridge, startPeer } from "./harness.js"
 
-const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-web-custom-codec-" }))
+const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-gateway-custom-codec-" }))
 console.log(`machine load at start: ${await machineLoad()}`)
 
 const text = "hello from zenoh, ünïcode too"
@@ -19,7 +19,7 @@ const toneHz = 400
 const tone = new Int16Array(960).map((_, index) => Math.round(Math.sin(2 * Math.PI * toneHz * index / 48000) * 8000))
 
 try {
-    const otherBinary = Deno.env.get("ZENOH_WEB_CUSTOM_CODEC_BIN")
+    const otherBinary = Deno.env.get("ZENOH_GATEWAY_CUSTOM_CODEC_BIN")
     const webRoot = await buildAll(scratch, otherBinary ? [] : ["custom_codec"])
     const binary = otherBinary ?? bridgeDir.join("target/release/examples/custom_codec").toString()
     scratch.join("text.txt").writeTextSync(text)
@@ -33,7 +33,7 @@ try {
     const page = await browser.newPage(`${bridge.url}/test/blank.html`)
 
     const result = await page.evaluate(async (bridgeUrl) => {
-        const { connect, registerEncoding } = await import("/client/zenoh_web.js")
+        const { connect, registerEncoding } = await import("/client/zenoh_gateway.js")
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
         const out = {}
         const client = await connect(bridgeUrl)

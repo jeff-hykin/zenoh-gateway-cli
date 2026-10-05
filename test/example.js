@@ -7,7 +7,7 @@
 import { $ } from "https://esm.sh/dax-sh@0.42.0"
 import { bridgeDir, buildAll, check, finish, fixtureKey, fixturesDir, launchBrowser, loadManifest, machineLoad, repoRoot, startBridge, startPeer } from "./harness.js"
 
-const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-web-example-" }))
+const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-gateway-example-" }))
 // the README screenshot is only rewritten on request, so a test run leaves the repo clean
 const screenshotPath = Deno.env.get("UPDATE_SCREENSHOT") ? repoRoot.join("test/artifacts/example.png") : scratch.join("example.png")
 console.log(`machine load at start: ${await machineLoad()}`)
@@ -30,12 +30,12 @@ const rawKey = "example/raw"
 
 try {
     $.logStep("building bridge + test peer (release)")
-    await $`cargo build --release --bin zenoh-web --example test_peer`.cwd(bridgeDir)
+    await $`cargo build --release --bin zenoh-gateway --example test_peer`.cwd(bridgeDir)
     const peer = await startPeer([
         ...streams.flatMap((stream) => ["--publish", `${stream.key}=${fixturesDir.join(stream.file)}@10`]),
         "--synthetic", `${rawKey}=1500@20`,
     ])
-    // ZW_LOCAL_CLIENT=1: the page uses zenoh-web's client from the checkout cargo builds (before it is pushed)
+    // ZW_LOCAL_CLIENT=1: the page uses zenoh-gateway's client from the checkout cargo builds (before it is pushed)
     const localClient = Deno.env.get("ZW_LOCAL_CLIENT") === "1"
     let webDir = repoRoot.join("examples/web")
     if (localClient) {
@@ -59,7 +59,7 @@ try {
     page.addEventListener("pageerror", (event) => consoleErrors.push(`uncaught: ${event.detail?.message ?? event.detail}`))
     await page.setViewportSize({ width: 1400, height: 1100 })
     $.logStep(`opening ${bridge.url}/index.html (client from esm.sh)`)
-    await page.goto(`${bridge.url}/index.html${localClient ? "?client=/client/zenoh_web.js" : ""}`)
+    await page.goto(`${bridge.url}/index.html${localClient ? "?client=/client/zenoh_gateway.js" : ""}`)
 
     const connected = await page.evaluate(async () => {
         for (let attempt = 0; attempt < 150; attempt++) {
@@ -169,7 +169,7 @@ try {
         slider.value = "0.5"
         slider.dispatchEvent(new Event("input"))
         slider.dispatchEvent(new Event("change"))
-        const stream = [...window.zenohWebExample.streams].find((candidate) => candidate.output === "pointcloud")
+        const stream = [...window.zenohGatewayExample.streams].find((candidate) => candidate.output === "pointcloud")
         const received = stream.subscription.received
         for (let attempt = 0; attempt < 30 && stream.subscription.received === received; attempt++) {
             await new Promise((resolve) => setTimeout(resolve, 200))

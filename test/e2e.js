@@ -1,11 +1,11 @@
 #!/usr/bin/env -S deno run --allow-all
-// End-to-end: zenoh test peer <-> zenoh-web bridge <-> headless Chrome over real WebRTC.
+// End-to-end: zenoh test peer <-> zenoh-gateway bridge <-> headless Chrome over real WebRTC.
 // Usage: deno run --allow-all test/e2e.js
 
 import { $ } from "https://esm.sh/dax-sh@0.42.0"
 import { buildAll, check, failures, finish, launchBrowser, machineLoad, startBridge, startPeer } from "./harness.js"
 
-const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-web-e2e-" }))
+const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-gateway-e2e-" }))
 console.log(`machine load at start: ${await machineLoad()}`)
 
 // zenoh's own access_control on the bridge's session: browsers' puts and subscriptions are dropped silently like any other traffic
@@ -35,7 +35,7 @@ try {
 
     $.logStep("wildcard subscription (raw, all keys)")
     const wildcard = await page.evaluate(async (bridgeUrl) => {
-        const { connect } = await import("/client/zenoh_web.js")
+        const { connect } = await import("/client/zenoh_gateway.js")
         const client = await connect(bridgeUrl)
         const keys = new Set()
         let jpeg = null
@@ -59,7 +59,7 @@ try {
     const viewerGone = await bridgeOutput.waitFor((line) => line.includes("peer 1: gone"), 5000).then(() => true, () => false)
     check(viewerGone, "bridge drops a page's peer connection after it navigates away")
     const results = await page.evaluate(async (bridgeUrl) => {
-        const { connect, Priority, encodePut } = await import("/client/zenoh_web.js")
+        const { connect, Priority, encodePut } = await import("/client/zenoh_gateway.js")
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
         const decoder = new TextDecoder()
         const out = {}
@@ -282,7 +282,7 @@ try {
 
     $.logStep("topic enumeration, zenoh access control, chunking")
     const extra = await page.evaluate(async (bridgeUrl) => {
-        const { connect } = await import("/client/zenoh_web.js")
+        const { connect } = await import("/client/zenoh_gateway.js")
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
         const out = {}
         const client = await connect(bridgeUrl)
@@ -290,7 +290,7 @@ try {
         out.topics = await client.listTopics("test/unsubscribed/**", { probeMs: 1500 })
         out.allTopics = (await client.listTopics()).map((topic) => topic.key)
         out.declaredOnly = await client.listTopics("test/unsubscribed/**", { probeMs: 0 })
-        out.health = await (await fetch(`${bridgeUrl}/zenoh-web/health`)).json()
+        out.health = await (await fetch(`${bridgeUrl}/zenoh-gateway/health`)).json()
 
         const outcome = (promise) => promise.then(() => "accepted", (error) => error.message)
         const denied = client.publisher("test/frombrowser/denied", { delivery: "reliable" })
@@ -394,7 +394,7 @@ try {
     check(!topicKeys.includes("test/unsubscribed/silent"), "listTopics can't see a declared publisher that never puts (documented)")
     const declaredOnlySources = extra.declaredOnly.flatMap((topic) => topic.sources)
     check(declaredOnlySources.includes("token") && !declaredOnlySources.includes("sample"), `listTopics probeMs 0: tokens without a sample probe (${JSON.stringify(extra.declaredOnly)})`)
-    check(extra.health?.service === "zenoh-web" && typeof extra.health?.version === "string", `GET /zenoh-web/health identifies the server (${JSON.stringify(extra.health)})`)
+    check(extra.health?.service === "zenoh-gateway" && typeof extra.health?.version === "string", `GET /zenoh-gateway/health identifies the server (${JSON.stringify(extra.health)})`)
     check(extra.allTopics.includes("test/cached") && !extra.allTopics.includes("test/queryable"), `listTopics(**) sees the AdvancedPublisher's token, not a queryable without one (documented) (${extra.allTopics.join(", ")})`)
 
     await $.sleep(500)
@@ -423,7 +423,7 @@ try {
     $.logStep("SIGTERM to the bridge with an armed deadman")
     const lastPage = await browser.newPage(`${bridgeUrl}/test/blank.html`)
     await lastPage.evaluate(async (bridgeUrl) => {
-        const { connect } = await import("/client/zenoh_web.js")
+        const { connect } = await import("/client/zenoh_gateway.js")
         const client = await connect(bridgeUrl, { heartbeatHz: 5, heartbeatMisses: 10 })
         await client.publisher("test/frombrowser/stop", { delivery: "reliable" }).setDeadman("STOP-sigterm")
     }, { args: [bridgeUrl] })

@@ -9,7 +9,7 @@ import { buildAll, check, finish, launchBrowser, machineLoad, startBridge, start
 import { links, percentiles, startShapedLink } from "./shaped_link.js"
 
 const args = parseArgs(Deno.args, { string: ["profile", "seconds", "delivery", "message-bytes"], default: { profile: "all", seconds: "15", delivery: "latest", "message-bytes": "60000" } })
-const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-web-throughput-" }))
+const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-gateway-throughput-" }))
 console.log(`machine load at start: ${await machineLoad()}`)
 
 /** 2 Mb/s: what one channel must sustain on the 50 ms link (0: report only) */
@@ -31,7 +31,7 @@ try {
         const page = await browser.newPage(`${shaped.url}/test/blank.html`)
         $.logStep(`${name}: ${JSON.stringify(link)}`)
         const result = await page.evaluate(async (url, seconds, delivery) => {
-            const { connect } = await import("/client/zenoh_web.js")
+            const { connect } = await import("/client/zenoh_gateway.js")
             const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
             const client = await connect(url, { heartbeatHz: 10, heartbeatMisses: 100 })
             let bytes = 0

@@ -9,7 +9,7 @@ import { $ } from "https://esm.sh/dax-sh@0.42.0"
 import { launch } from "jsr:@astral/astral@0.5.6"
 import { buildAll, check, finish, fixtureKey, fixturesDir, loadManifest, startBridge, startPeer } from "./harness.js"
 
-const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-web-abandoned-" }))
+const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-gateway-abandoned-" }))
 const entry = loadManifest().entries.find((candidate) => candidate.file === "dimos/image_rgb8.bin")
 const key = fixtureKey(entry)
 
@@ -25,7 +25,7 @@ const doomed = await launch({ headless: true, args: ["--no-sandbox", "--autoplay
 const doomedPids = [...await chromePids()].filter((pid) => !chromesBefore.has(pid))
 const doomedPage = await doomed.newPage(`${bridge.url}/test/blank.html`)
 const subscribed = await doomedPage.evaluate(async (bridgeUrl, key) => {
-    const { connect } = await import("/client/zenoh_web.js")
+    const { connect } = await import("/client/zenoh_gateway.js")
     const client = await connect(bridgeUrl)
     let frames = 0
     const subscription = client.subscribe(key, { encoding: "dimos_lcm_image" }, () => frames++)

@@ -1,8 +1,8 @@
-// zenoh-web example: no build step, the TypeScript client comes transpiled from esm.sh; depth and
+// zenoh-gateway example: no build step, the TypeScript client comes transpiled from esm.sh; depth and
 // point clouds arrive as fields the client decodes, so no decoding code is needed.
 // Query params: ?gateway=<url> (default: this page's origin), ?client=<module url> (e.g. a local bundle).
 
-const defaultClientUrl = "https://esm.sh/gh/jeff-hykin/zenoh-web@fb465e704544008095a00b5416d68b6abc91147c/client/zenoh_web.ts"
+const defaultClientUrl = "https://esm.sh/gh/jeff-hykin/zenoh-gateway@fb465e704544008095a00b5416d68b6abc91147c/client/zenoh_gateway.ts"
 
 const params = new URLSearchParams(location.search)
 const bridgeUrl = params.get("gateway") ?? location.origin
@@ -76,7 +76,7 @@ client.onState(setConnectionState)
 /** @type {Set<Stream>} */
 const streams = new Set()
 // for debugging from the console (and the example test)
-window.zenohWebExample = { client, streams }
+window.zenohGatewayExample = { client, streams }
 
 // ---------------------------------------------------------------- topics
 
@@ -297,7 +297,7 @@ class VideoView {
         }
     }
 
-    /** @param {import("https://esm.sh/gh/jeff-hykin/zenoh-web/client/zenoh_web.ts").Message} message */
+    /** @param {import("https://esm.sh/gh/jeff-hykin/zenoh-gateway/client/zenoh_gateway.ts").Message} message */
     draw(message) {
         this.attach(message.mediaStream)
         const info = message.video

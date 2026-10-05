@@ -7,7 +7,7 @@
 import { $ } from "https://esm.sh/dax-sh@0.42.0"
 import { buildAll, check, finish, fixtureKey, fixturesDir, launchBrowser, loadManifest, machineLoad, startBridge, startPeer } from "./harness.js"
 
-const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-web-allocation-" }))
+const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-gateway-allocation-" }))
 console.log(`machine load at start: ${await machineLoad()}`)
 
 const rawBudget = 480_000
@@ -33,7 +33,7 @@ try {
 
     /** Three 400 KB/s streams with these subscribe options, measured under the capped budget. */
     const measureRaw = (streams) => page.evaluate(async (bridgeUrl, streams) => {
-        const { connect } = await import("/client/zenoh_web.js")
+        const { connect } = await import("/client/zenoh_gateway.js")
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
         const client = await connect(bridgeUrl)
         const counts = { a: 0, b: 0, c: 0 }
@@ -94,7 +94,7 @@ try {
     const tradeoffs = []
     for (const tradeoff of [0, 1]) {
         tradeoffs.push(await page.evaluate(async (bridgeUrl, key, tradeoff) => {
-            const { connect } = await import("/client/zenoh_web.js")
+            const { connect } = await import("/client/zenoh_gateway.js")
             const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
             const client = await connect(bridgeUrl)
             const frames = []

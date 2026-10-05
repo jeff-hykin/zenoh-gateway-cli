@@ -1,4 +1,4 @@
-//! Embeds the zenoh-web server in an application that brings its own zenoh session, three
+//! Embeds the zenoh-gateway server in an application that brings its own zenoh session, three
 //! message encodings and its own video encoder:
 //!
 //! - `text_uppercase` (data): UTF-8 text, upper-cased; lower quality keeps a shorter prefix. The
@@ -17,7 +17,7 @@
 use anyhow::{Context, Result, bail, ensure};
 use clap::Parser;
 use std::path::PathBuf;
-use zenoh_web::{AudioPcm, Channel, DecodedFrame, EncodeOptions, EncodedVideo, EncodingOutput, EncodingSample, MessageEncoding, Server, VideoEncoder, VideoFormat, VideoImage, VideoTarget};
+use zenoh_gateway::{AudioPcm, Channel, DecodedFrame, EncodeOptions, EncodedVideo, EncodingOutput, EncodingSample, MessageEncoding, Server, VideoEncoder, VideoFormat, VideoImage, VideoTarget};
 
 /// Upper-cases UTF-8 text. Quality q keeps the first `ceil(q × length)` characters.
 struct TextUppercase;
@@ -136,7 +136,7 @@ impl MessageEncoding for Pcm48k {
 #[derive(Parser)]
 struct Cli {
     /// HTTP port (0 = any free port).
-    #[arg(long, default_value_t = zenoh_web::DEFAULT_PORT)]
+    #[arg(long, default_value_t = zenoh_gateway::DEFAULT_PORT)]
     port: u16,
     /// zenoh config file (json5) for the application's session.
     #[arg(long)]
@@ -151,18 +151,18 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,zenoh=warn,zenoh_web=info,rtc=warn,webrtc=warn")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,zenoh=warn,zenoh_gateway=info,rtc=warn,webrtc=warn")).init();
     let cli = Cli::parse();
 
-    // the host application's own zenoh session, shared with zenoh-web
+    // the host application's own zenoh session, shared with zenoh-gateway
     let mut config = match &cli.zenoh_config {
-        Some(path) => zenoh_web::zenoh::Config::from_file(path).map_err(|error| anyhow::anyhow!("{error}"))?,
-        None => zenoh_web::zenoh::Config::default(),
+        Some(path) => zenoh_gateway::zenoh::Config::from_file(path).map_err(|error| anyhow::anyhow!("{error}"))?,
+        None => zenoh_gateway::zenoh::Config::default(),
     };
     if !cli.connect.is_empty() {
         config.insert_json5("connect/endpoints", &serde_json::to_string(&cli.connect)?).map_err(|error| anyhow::anyhow!("{error}"))?;
     }
-    let session = zenoh_web::zenoh::open(config).await.map_err(|error| anyhow::anyhow!("{error}"))?;
+    let session = zenoh_gateway::zenoh::open(config).await.map_err(|error| anyhow::anyhow!("{error}"))?;
 
     // channel video-av1 through this encoder instead of the built-in one, as a hardware encoder would plug in
     let mut builder = Server::builder().session(session.clone()).encoding(TextUppercase).encoding(RgbSwatch).encoding(Pcm48k).video_encoder(|| Box::new(Av1Encoder::default()));

@@ -1,11 +1,11 @@
-//! The `zenoh-web` command behind a relay: `--zenoh-signalling robot --no-http`, its zenoh dialling out to a router,
-//! reached the way zenoh-web-relay reaches it (`Client::connect_zenoh` over that router).
+//! The `zenoh-gateway` command behind a relay: `--zenoh-signalling robot --no-http`, its zenoh dialling out to a router,
+//! reached the way zenoh-gateway-relay reaches it (`Client::connect_zenoh` over that router).
 
 use std::process::{Child, Command};
 use std::time::Duration;
 use tokio::time::timeout;
-use zenoh_web::client::{Client, ClientOptions, Delivery, Message, PublisherOptions, SubscribeOptions};
-use zenoh_web::zenoh;
+use zenoh_gateway::client::{Client, ClientOptions, Delivery, Message, PublisherOptions, SubscribeOptions};
+use zenoh_gateway::zenoh;
 
 struct KillOnDrop(Child);
 
@@ -24,12 +24,12 @@ async fn cli_answers_signalling_over_zenoh_with_no_http() {
         config.insert_json5(key, &value).unwrap();
     }
     let router = zenoh::open(config).await.unwrap();
-    let dir = std::env::temp_dir().join(format!("zenoh-web-cli-signalling-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("zenoh-gateway-cli-signalling-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("tokens.json5"), r#"{ tokens: { "relay-secret": "write" } }"#).unwrap();
     std::fs::write(dir.join("zenoh.json5"), r#"{ mode: "peer", scouting: { multicast: { enabled: false } }, listen: { endpoints: [] } }"#).unwrap();
     let _cli = KillOnDrop(
-        Command::new(env!("CARGO_BIN_EXE_zenoh-web"))
+        Command::new(env!("CARGO_BIN_EXE_zenoh-gateway"))
             .args(["--zenoh-config", dir.join("zenoh.json5").to_str().unwrap(), "--connect", &format!("tcp/127.0.0.1:{port}")])
             .args(["--zenoh-signalling", "robot", "--no-http", "--video-encoder", "software", "--auth-file", dir.join("tokens.json5").to_str().unwrap()])
             .spawn()
@@ -40,7 +40,7 @@ async fn cli_answers_signalling_over_zenoh_with_no_http() {
     let mut refused = String::new();
     for _ in 0..100 {
         refused = Client::connect_zenoh(&router, "robot", options("nope")).await.err().unwrap().to_string();
-        if !refused.contains("no zenoh-web server answered") {
+        if !refused.contains("no zenoh-gateway server answered") {
             break;
         }
         tokio::time::sleep(Duration::from_millis(200)).await;

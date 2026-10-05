@@ -6,7 +6,7 @@
 import { $ } from "https://esm.sh/dax-sh@0.42.0"
 import { buildAll, check, finish, fixtureKey, fixturesDir, launchBrowser, loadManifest, machineLoad, startBridge, startPeer } from "./harness.js"
 
-const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-web-codecs-" }))
+const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-gateway-codecs-" }))
 console.log(`machine load at start: ${await machineLoad()}`)
 
 /**
@@ -76,7 +76,7 @@ try {
 
     $.logStep(`video: ${cases.filter((c) => c.kind === "video").length} subscriptions, H.264 over video tracks`)
     const video = await page.evaluate(async (bridgeUrl, cases) => {
-        const { connect } = await import("/client/zenoh_web.js")
+        const { connect } = await import("/client/zenoh_gateway.js")
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
         const client = await connect(bridgeUrl)
         const results = await Promise.all(cases.map(async (testCase) => {
@@ -146,7 +146,7 @@ try {
     $.logStep("depth: lossless over the data channel")
     const depthCases = cases.filter((c) => c.kind === "depth")
     const depth = await page.evaluate(async (bridgeUrl, cases) => {
-        const { connect } = await import("/client/zenoh_web.js")
+        const { connect } = await import("/client/zenoh_gateway.js")
         const client = await connect(bridgeUrl)
         // value at (column, row) of each fixture, from manifest.json's "pattern"
         const formulas = {
@@ -206,7 +206,7 @@ try {
     $.logStep("point clouds: int16 quantized over the data channel")
     const cloudCases = cases.filter((c) => c.kind === "pointcloud")
     const clouds = await page.evaluate(async (bridgeUrl, cases) => {
-        const { connect } = await import("/client/zenoh_web.js")
+        const { connect } = await import("/client/zenoh_gateway.js")
         const client = await connect(bridgeUrl)
         const firstMessage = (key, options) => new Promise((resolve) => {
             const timer = setTimeout(() => resolve({ error: "no message in 8 s" }), 8000)
@@ -274,7 +274,7 @@ try {
 
     $.logStep("codec selection errors and shared encodes")
     const extra = await page.evaluate(async (bridgeUrl, depthKey) => {
-        const { connect } = await import("/client/zenoh_web.js")
+        const { connect } = await import("/client/zenoh_gateway.js")
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
         const out = {}
         const first = await connect(bridgeUrl)

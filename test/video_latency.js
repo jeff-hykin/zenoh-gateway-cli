@@ -10,7 +10,7 @@ import { buildAll, check, finish, fixturesDir, launchBrowser, machineLoad, start
 import { links, percentiles, startShapedLink } from "./shaped_link.js"
 
 const args = parseArgs(Deno.args, { string: ["profile", "seconds", "hz"], default: { profile: "direct", seconds: "15", hz: "30" } })
-const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-web-video-latency-" }))
+const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-gateway-video-latency-" }))
 console.log(`machine load at start: ${await machineLoad()}`)
 
 const link = args.profile === "direct" ? null : links[args.profile]
@@ -38,7 +38,7 @@ try {
                     peers.push(this)
                 }
             }
-            const { connect } = await import("/client/zenoh_web.js")
+            const { connect } = await import("/client/zenoh_gateway.js")
             const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
             const client = await connect(url, { heartbeatHz: 10, heartbeatMisses: 100 })
             const canvas = new OffscreenCanvas(320, 240)

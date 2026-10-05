@@ -5,7 +5,7 @@ import { launch } from "jsr:@astral/astral@0.5.6"
 import { buildWeb, crateRoots, repoRoot } from "../tools/build_web.js"
 
 export { repoRoot }
-/** where cargo builds the zenoh-web binary and the examples */
+/** where cargo builds the zenoh-gateway binary and the examples */
 export const bridgeDir = repoRoot
 /** zenoh-dimos-codecs' fixtures, at the revision Cargo.lock pins */
 export const fixturesDir = (await crateRoots()).codecs.join("test/fixtures")
@@ -128,7 +128,7 @@ export function fixtureKey(entry) {
  */
 export async function buildAll(scratch, examples = []) {
     $.logStep(`building bridge + test peer${examples.map((example) => ` + ${example}`).join("")} (release)`)
-    await $`cargo build --release --bin zenoh-web --example test_peer ${examples.flatMap((example) => ["--example", example])}`.cwd(bridgeDir)
+    await $`cargo build --release --bin zenoh-gateway --example test_peer ${examples.flatMap((example) => ["--example", example])}`.cwd(bridgeDir)
     $.logStep("building the web root")
     return await buildWeb(scratch.join("web").toString())
 }
@@ -160,13 +160,13 @@ export async function startPeer(extraArgs) {
  * @param {string} binary
  * @param {object} zenohConfig more zenoh config for the bridge's session
  */
-export async function startBridge(scratch, zenohPort, webRoot, extraArgs = [], binary = bridgeDir.join("target/release/zenoh-web").toString(), zenohConfig = {}) {
+export async function startBridge(scratch, zenohPort, webRoot, extraArgs = [], binary = bridgeDir.join("target/release/zenoh-gateway").toString(), zenohConfig = {}) {
     const httpPort = freePort()
     const configPath = scratch.join(`bridge_zenoh_${httpPort}.json5`)
     // isolated zenoh: no multicast scouting, so the test never touches other zenoh systems
     configPath.writeTextSync(JSON.stringify({ mode: "peer", scouting: { multicast: { enabled: false } }, listen: { endpoints: [] }, ...zenohConfig }))
     const bridge = $`${binary} --port ${httpPort} --zenoh-config ${configPath} --connect tcp/127.0.0.1:${zenohPort} --serve ${webRoot} ${extraArgs}`
-        .env("RUST_LOG", Deno.env.get("RUST_LOG") ?? "info,zenoh=warn,zenoh_web=info")
+        .env("RUST_LOG", Deno.env.get("RUST_LOG") ?? "info,zenoh=warn,zenoh_gateway=info")
         .stdout("inherit").stderr("piped").noThrow().spawn()
     children.push(bridge)
     const output = lineCollector(bridge.stderr(), "bridge")

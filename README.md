@@ -1,10 +1,10 @@
-# zenoh-web-cli
+# zenoh-gateway-cli
 
-The `zenoh-web` command: a [zenoh-web](https://github.com/jeff-hykin/zenoh-web) server with the ROS 2
+The `zenoh-gateway` command: a [zenoh-gateway](https://github.com/jeff-hykin/zenoh-gateway) server with the ROS 2
 / dimos codecs of [zenoh-dimos-codecs](https://github.com/jeff-hykin/zenoh-dimos-codecs). View and
 drive a zenoh system from a browser over WebRTC: camera images as H.264 video (hardware-encoded where it can), lossless depth,
 quantized point clouds, raw bytes for everything else, and a per-browser bandwidth allocator. The
-client API, the allocator and the wire protocol are documented in zenoh-web's README and SPEC.md.
+client API, the allocator and the wire protocol are documented in zenoh-gateway's README and SPEC.md.
 
 ![the example page: topic list, H.264 video, point cloud, depth, a raw stream and live allocation stats](test/artifacts/example.png)
 
@@ -13,24 +13,24 @@ client API, the allocator and the wire protocol are documented in zenoh-web's RE
 Prebuilt binaries (Linux x86_64/aarch64 with glibc ≥ 2.35, macOS Apple Silicon/Intel; no Windows):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jeff-hykin/zenoh-web-cli/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/jeff-hykin/zenoh-gateway-cli/main/install.sh | sh
 ```
 
-It picks the [release](https://github.com/jeff-hykin/zenoh-web-cli/releases) tarball for your OS/CPU,
-checks it against `SHA256SUMS`, and installs `zenoh-web` into `~/.local/bin`. Env overrides:
-`ZENOH_WEB_VERSION=v0.3.0`, `ZENOH_WEB_INSTALL_DIR=/somewhere/bin`.
+It picks the [release](https://github.com/jeff-hykin/zenoh-gateway-cli/releases) tarball for your OS/CPU,
+checks it against `SHA256SUMS`, and installs `zenoh-gateway` into `~/.local/bin`. Env overrides:
+`ZENOH_GATEWAY_VERSION=v0.3.0`, `ZENOH_GATEWAY_INSTALL_DIR=/somewhere/bin`.
 
 With nix (builds from source; aarch64-darwin, aarch64-linux, x86_64-linux):
 
 ```sh
-nix profile install github:jeff-hykin/zenoh-web-cli   # puts zenoh-web on your PATH
-nix run github:jeff-hykin/zenoh-web-cli -- --help     # or run it without installing
+nix profile install github:jeff-hykin/zenoh-gateway-cli   # puts zenoh-gateway on your PATH
+nix run github:jeff-hykin/zenoh-gateway-cli -- --help     # or run it without installing
 ```
 
 ## Quick start
 
 ```sh
-git clone https://github.com/jeff-hykin/zenoh-web-cli && cd zenoh-web-cli
+git clone https://github.com/jeff-hykin/zenoh-gateway-cli && cd zenoh-gateway-cli
 cargo run --release -- --serve examples/web --connect tcp/127.0.0.1:7447   # your zenoh router/peer's endpoint
 # open http://localhost:7448/
 ```
@@ -50,11 +50,11 @@ Then on the page type a key (e.g. `demo/camera/sensor_msgs.Image`; the encoding 
 `dimos_lcm_image`; the channel select defaults to the encoding's own) and press Add. A recent stable Rust (edition 2024), or `nix develop` for a shell with
 Rust, deno, zig and cargo-zigbuild.
 
-The example page (`examples/web/`, plain JS, no build step) imports zenoh-web's client from esm.sh at
-a pinned commit, so the browser needs internet. Depth and point clouds arrive as zenoh-web fields that
+The example page (`examples/web/`, plain JS, no build step) imports zenoh-gateway's client from esm.sh at
+a pinned commit, so the browser needs internet. Depth and point clouds arrive as zenoh-gateway fields that
 the client decodes itself (`msg.decoded`), zstd-compressed by default; the encodings and what each
 sends come from the server (`client.encodings`). Query parameters: `?gateway=<url>` (default: the
-page's origin) and `?client=<module url>` (e.g. `/client/zenoh_web.js` from `deno task build`, to work
+page's origin) and `?client=<module url>` (e.g. `/client/zenoh_gateway.js` from `deno task build`, to work
 offline).
 
 ## Flags
@@ -70,13 +70,13 @@ offline).
 | `--auth-file <file>` | none (anyone may do anything) | require a token: json5 map of tokens to grants, see [Auth](#auth) |
 | `--ice-server <url>` | none | STUN/TURN for both ends, e.g. `stun:stun.l.google.com:19302`, `turn:user:pass@relay.example:3478`; repeatable |
 | `--turn-secret <secret>` | none | coturn's `static-auth-secret`: TURN servers without `user:pass@` get credentials minted per connection (valid 24 h) |
-| `--ice-servers-command <cmd>` | none | mint STUN/TURN servers per connection, added after `--ice-server`: run with `sh -c`, env `ZENOH_WEB_ICE_SIDE` (`browser`/`gateway`) and `ZENOH_WEB_ICE_TOKEN`; prints `{"iceServers": [...]}` or `[...]`. On failure or after 5 s, only `--ice-server` |
+| `--ice-servers-command <cmd>` | none | mint STUN/TURN servers per connection, added after `--ice-server`: run with `sh -c`, env `ZENOH_GATEWAY_ICE_SIDE` (`browser`/`gateway`) and `ZENOH_GATEWAY_ICE_TOKEN`; prints `{"iceServers": [...]}` or `[...]`. On failure or after 5 s, only `--ice-server` |
 | `--cloudflare-turn-key-id <id>` | none | Cloudflare TURN: credentials minted through Cloudflare's API; the key's API token comes from `CLOUDFLARE_TURN_API_TOKEN` (an env var, so it stays out of `ps`) |
 | `--cloudflare-turn-ttl <seconds>` | 86400 | how long Cloudflare credentials last; the shared set is minted again after half of it |
 | `--cloudflare-turn-per-connection` | off | mint Cloudflare credentials for every connection instead of sharing one set |
 | `--udp-ports <port or low-high>` | ephemeral | WebRTC UDP port range, one port per browser connection (firewall-friendly) |
 | `--video-encoder <name>` | auto | `auto` (the first hardware encoder that encodes a test frame, else software), `software` (openh264), `videotoolbox` (macOS), `gstreamer` (`nvv4l2h264enc` on a Jetson, `nvh264enc`, `vah264enc` / `vaapih264enc`; GStreamer is loaded at runtime, so the binary runs without it); from [zenoh-web-encoders](https://github.com/jeff-hykin/zenoh-web-encoders). A hardware encoder that fails mid-stream hands over to software |
-| `--zenoh-signalling <name>` | none | also answer signalling over zenoh as `<name>` (queryables `zenoh-web/<name>/offer`, `/ice`), for a [zenoh-web-relay](https://github.com/jeff-hykin/zenoh-web-relay) this gateway's zenoh dials out to; see [Behind a relay](#behind-a-relay) |
+| `--zenoh-signalling <name>` | none | also answer signalling over zenoh as `<name>` (queryables `zenoh-gateway/<name>/offer`, `/ice`), for a [zenoh-gateway-relay](https://github.com/jeff-hykin/zenoh-gateway-relay) this gateway's zenoh dials out to; see [Behind a relay](#behind-a-relay) |
 | `--no-http` | off | no HTTP listener at all (needs `--zenoh-signalling`): nothing listens for inbound connections |
 
 Logging: `RUST_LOG=info,zenoh=warn`. Access control is zenoh's own: an `access_control` section in
@@ -102,7 +102,7 @@ are dropped silently), e.g. so no browser can drive the robot:
 ## Auth
 
 `--auth-file tokens.json5` makes every browser present a token (`connect(url, { token })`, sent as
-`Authorization: Bearer`). The file maps tokens to a role or a full zenoh-web `Grant`, and may define
+`Authorization: Bearer`). The file maps tokens to a role or a full zenoh-gateway `Grant`, and may define
 lease groups:
 
 ```json5
@@ -121,26 +121,26 @@ lease groups:
 The file is re-read when it changes: removing (or changing) a token revokes it, closing its live
 connections and refusing its reconnects. Lease groups are read at startup. Leases bind only the
 browsers of this gateway, not native zenoh publishers (zenoh's `access_control` covers those). Grants,
-leases and ICE: zenoh-web's README and SPEC ("Auth", "Leases", "ICE and TURN").
+leases and ICE: zenoh-gateway's README and SPEC ("Auth", "Leases", "ICE and TURN").
 
 A relay with coturn: `turnserver --use-auth-secret --static-auth-secret=$SECRET --realm=robots`, then
-`zenoh-web --ice-server turn:relay.example.org:3478 --turn-secret $SECRET --udp-ports 50000-50100`;
+`zenoh-gateway --ice-server turn:relay.example.org:3478 --turn-secret $SECRET --udp-ports 50000-50100`;
 the gateway and every browser use the relay with credentials minted per connection.
 
-Cloudflare TURN instead: `CLOUDFLARE_TURN_API_TOKEN=$TOKEN zenoh-web --cloudflare-turn-key-id $KEY_ID`
+Cloudflare TURN instead: `CLOUDFLARE_TURN_API_TOKEN=$TOKEN zenoh-gateway --cloudflare-turn-key-id $KEY_ID`
 (Cloudflare dashboard → Realtime → TURN). Any other provider: `--ice-servers-command ./mint-turn.sh`.
 
 ## Behind a relay
 
-A robot with no inbound ports dials out to a [zenoh-web-relay](https://github.com/jeff-hykin/zenoh-web-relay) on a
+A robot with no inbound ports dials out to a [zenoh-gateway-relay](https://github.com/jeff-hykin/zenoh-gateway-relay) on a
 public host, which pulls each camera once and fans it out to the browsers:
 
 ```sh
-zenoh-web --zenoh-config robot.json5 --connect tls/relay.example.com:7447 \
+zenoh-gateway --zenoh-config robot.json5 --connect tls/relay.example.com:7447 \
     --zenoh-signalling robot --no-http --auth-file relay-token.json5
 ```
 
-The relay (`zenoh-web-relay --backend-name robot --backend-token <token> ...`) signals over that zenoh link; the
+The relay (`zenoh-gateway-relay --backend-name robot --backend-token <token> ...`) signals over that zenoh link; the
 token file holds the relay's token (its grant bounds every viewer of the relay). `robot.json5` carries the TLS CA and
 zenoh user/password for the relay's router; the WebRTC media then flows from the robot to the relay's address.
 `tests/zenoh_signalling.rs` runs this command with `--no-http` and connects to it the relay's way.
@@ -148,15 +148,15 @@ zenoh user/password for the relay's router; the WebRTC media then flows from the
 ## Building with nix
 
 ```sh
-nix build .#zenoh-web --max-jobs auto                  # native (default package); result/bin/zenoh-web
-nix build .#zenoh-web-aarch64-linux --max-jobs auto    # on a Mac: aarch64 Linux binary (Jetson, Pi 5)
-nix build .#zenoh-web-x86_64-linux --max-jobs auto     # on a Mac: x86_64 Linux binary
-nix build .#zenoh-web-x86_64-darwin                    # on an Apple Silicon Mac: Intel macOS binary
+nix build .#zenoh-gateway --max-jobs auto                  # native (default package); result/bin/zenoh-gateway
+nix build .#zenoh-gateway-aarch64-linux --max-jobs auto    # on a Mac: aarch64 Linux binary (Jetson, Pi 5)
+nix build .#zenoh-gateway-x86_64-linux --max-jobs auto     # on a Mac: x86_64 Linux binary
+nix build .#zenoh-gateway-x86_64-darwin                    # on an Apple Silicon Mac: Intel macOS binary
 nix develop                                            # Rust (+ Linux targets), crate2nix, deno
 ```
 
-- Built with zenoh-web's `lib.crossRust` ([crate2nix](https://github.com/nix-community/crate2nix)): every crate is its
-  own derivation, shared with the zenoh-web, codecs and relay flakes (one build of zenoh, webrtc, tokio, ...
+- Built with zenoh-gateway's `lib.crossRust` ([crate2nix](https://github.com/nix-community/crate2nix)): every crate is its
+  own derivation, shared with the zenoh-gateway, codecs and relay flakes (one build of zenoh, webrtc, tokio, ...
   for all of them). `--max-jobs auto` lets nix build crates in parallel.
 - The Linux builds are cross compiled with zig as the C compiler and linker (openh264, zstd, ring) against glibc 2.35
   (Ubuntu 22.04, Jetson L4T 36, Pi OS bookworm): no VM, no GCC cross toolchain. GStreamer (the Jetson's hardware
@@ -164,20 +164,20 @@ nix develop                                            # Rust (+ Linux targets),
 - The macOS binary links `/usr/lib/libiconv.2.dylib` (rewritten from nix's copy), so it runs on Macs without nix.
   The Intel one is a plain cargo build by the same clang/SDK with `--target x86_64-apple-darwin` (nixpkgs no longer
   has x86_64-darwin, so it can't go through crate2nix).
-- After changing `Cargo.lock`, regenerate `Cargo.nix`: `nix run github:jeff-hykin/zenoh-web#crate2nix -- generate`.
+- After changing `Cargo.lock`, regenerate `Cargo.nix`: `nix run github:jeff-hykin/zenoh-gateway#crate2nix -- generate`.
 
 ## Releases
 
 All four release binaries are built on an Apple Silicon Mac, with no remote builders:
 
 ```sh
-nix build .#release --builders ''   # result/<target-triple>/zenoh-web for
+nix build .#release --builders ''   # result/<target-triple>/zenoh-gateway for
                                     # aarch64-apple-darwin, x86_64-apple-darwin,
                                     # aarch64-unknown-linux-gnu, x86_64-unknown-linux-gnu
 gh release create v<version> result/dist/*  # the tarballs + SHA256SUMS
 ```
 
-`result/dist/` holds `zenoh-web-<version>-<target-triple>.tar.gz` (binary + README.md) and
+`result/dist/` holds `zenoh-gateway-<version>-<target-triple>.tar.gz` (binary + README.md) and
 `SHA256SUMS`, made by GNU tar inside the build (no macOS extended attributes, fixed owner and
 mtime); `install.sh` reads those names.
 
@@ -188,14 +188,14 @@ cargo test && cargo clippy --all-targets   # the command and the test programs
 deno task e2e                              # every end-to-end suite (several minutes)
 ```
 
-The suites build zenoh-web and zenoh-dimos-codecs at the commits `Cargo.lock` pins (their checkouts
+The suites build zenoh-gateway and zenoh-dimos-codecs at the commits `Cargo.lock` pins (their checkouts
 come from `cargo metadata`: the browser client is bundled from them and the fixtures read from the
 codecs'). To test local changes, point cargo at your clones, e.g.
 `cargo update` after adding to `.cargo/config.toml`:
 
 ```toml
-[patch."https://github.com/jeff-hykin/zenoh-web"]
-zenoh-web = { path = "../zenoh-web/gateway" }
+[patch."https://github.com/jeff-hykin/zenoh-gateway"]
+zenoh-gateway = { path = "../zenoh-gateway/gateway" }
 [patch."https://github.com/jeff-hykin/zenoh-dimos-codecs"]
 zenoh-dimos-codecs = { path = "../zenoh-dimos-codecs" }
 ```
@@ -210,7 +210,7 @@ Chrome (never the one on port 9222):
   point clouds within the documented quantization bound (intensity exact), video by its quadrant
   colors within ±10 of the pattern (H.264 is lossy), plus unknown-encoding and video-zstd rejections and encodes shared
   across frontends.
-- `test/custom_codec.js`: `examples/custom_codec.rs` (zenoh-web with its own zenoh session, three
+- `test/custom_codec.js`: `examples/custom_codec.rs` (zenoh-gateway with its own zenoh session, three
   encodings and a video encoder of its own): a data encoding's text exact through a `registerEncoding` decoder (full
   and half `encodeOptions.quality`); a video encoding's I420 frames by their color within ±20, once on `video-h264`
   (the gateway's encoder) and once on `video-av1` through the application's own AV1 encoder (rav1e, registered with

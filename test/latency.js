@@ -8,7 +8,7 @@
 import { $ } from "https://esm.sh/dax-sh@0.42.0"
 import { buildAll, check, finish, freePort, launchBrowser, machineLoad, startBridge, startPeer } from "./harness.js"
 
-const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-web-latency-" }))
+const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-gateway-latency-" }))
 console.log(`machine load at start: ${await machineLoad()}`)
 
 const linkBytesPerSec = 2_000_000
@@ -129,7 +129,7 @@ try {
     const page = await browser.newPage(`${proxyUrl}/test/blank.html`)
     $.logStep(`shaped link: ${linkBytesPerSec / 1e6} MB/s bridge->browser, ${queueLimitBytes / 1e6} MB queue, ${oneWayDelayMs} ms each way`)
     const results = await page.evaluate(async (proxyUrl, bulkStreams) => {
-        const { connect, Priority } = await import("/client/zenoh_web.js")
+        const { connect, Priority } = await import("/client/zenoh_gateway.js")
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
         const client = await connect(proxyUrl, { heartbeatHz: 20, heartbeatMisses: 100 })
         /** p50/p99/max of the important stream's latency (arrival - publisher send time, same clock) over `seconds` */
