@@ -20,6 +20,16 @@
 //!
 //! `test/big`, `--publish` and `--synthetic` keys only put while someone subscribes.
 //!
+//! The rest of the zenoh API (SPEC "The rest of the zenoh API"):
+//! - `test/api/in/**`: printed as `API <put|delete> <key> <utf8 payload> enc=<encoding> att=<attachment>`
+//! - `test/api/echo/**`: a queryable replying on `test/api/echo/x` with `<parameters>|<payload>|<encoding>|<attachment>`
+//!   (encoding text/plain, attachment "reply-att"), then an error "echo-err", then a delete of `test/api/echo/gone`
+//!   (query `test/api/echo/*`: replies must intersect the query's key)
+//! - every 300 ms, a get on `test/api/browser/q?from=peer` with payload "ask", printed as `GOT <replies joined by ;>`
+//! - liveliness token `test/api/token/peer`; tokens under `test/api/token/**` printed as `ALIVE <key>` / `GONE <key>`
+//! - `test/api/meta`: while someone subscribes, every 300 ms a put "meta-payload" (encoding application/json,
+//!   attachment "peer-att") and then a delete
+//!
 //! Prints `READY` once everything is declared.
 
 use clap::Parser;
@@ -146,6 +156,8 @@ async fn main() -> anyhow::Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
+    declare_api_fixtures(&session).await?;
+
     let declared = session.declare_publisher("test/unsubscribed/declared").await.map_err(|e| anyhow::anyhow!("{e}"))?;
     let _silent = session.declare_publisher("test/unsubscribed/silent").await.map_err(|e| anyhow::anyhow!("{e}"))?;
     let _token = session.liveliness().declare_token("test/unsubscribed/token").await.map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -235,4 +247,78 @@ async fn main() -> anyhow::Result<()> {
         let _ = fast.put(payload).await;
         counter = counter.wrapping_add(1);
     }
+}
+
+fn print_line(line: String) {
+    let mut stdout = std::io::stdout().lock();
+    let _ = writeln!(stdout, "{line}");
+    let _ = stdout.flush();
+}
+
+fn text(bytes: Option<&zenoh::bytes::ZBytes>) -> String {
+    bytes.map(|bytes| String::from_utf8_lossy(&bytes.to_bytes()).into_owned()).unwrap_or_default()
+}
+
+/// The fixtures for the rest of the zenoh API (see the module docs); they live as long as the process.
+async fn declare_api_fixtures(session: &zenoh::Session) -> anyhow::Result<()> {
+    let error = |error: zenoh::Error| anyhow::anyhow!("{error}");
+    let subscriber = session
+        .declare_subscriber("test/api/in/**")
+        .callback(|sample| {
+            let kind = if sample.kind() == zenoh::sample::SampleKind::Delete { "delete" } else { "put" };
+            print_line(format!("API {kind} {} {} enc={} att={}", sample.key_expr(), text(Some(sample.payload())), sample.encoding(), text(sample.attachment())));
+        })
+        .await
+        .map_err(error)?;
+    std::mem::forget(subscriber);
+    let queryable = session
+        .declare_queryable("test/api/echo/**")
+        .callback(|query| {
+            tokio::spawn(async move {
+                let echo = format!("{}|{}|{}|{}", query.parameters(), text(query.payload()), query.encoding().map(|encoding| encoding.to_string()).unwrap_or_default(), text(query.attachment()));
+                let _ = query.reply("test/api/echo/x", echo).encoding("text/plain").attachment("reply-att").await;
+                let _ = query.reply_err("echo-err").await;
+                let _ = query.reply_del("test/api/echo/gone").await;
+            });
+        })
+        .await
+        .map_err(error)?;
+    std::mem::forget(queryable);
+    let token = session.liveliness().declare_token("test/api/token/peer").await.map_err(error)?;
+    std::mem::forget(token);
+    let watcher = session
+        .liveliness()
+        .declare_subscriber("test/api/token/**")
+        .callback(|sample| print_line(format!("{} {}", if sample.kind() == zenoh::sample::SampleKind::Put { "ALIVE" } else { "GONE" }, sample.key_expr())))
+        .await
+        .map_err(error)?;
+    std::mem::forget(watcher);
+    let getter = session.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            let Ok(replies) = getter.get("test/api/browser/q?from=peer").payload("ask").timeout(Duration::from_secs(2)).await else { continue };
+            let mut seen = Vec::new();
+            while let Ok(reply) = replies.recv_async().await {
+                seen.push(match reply.result() {
+                    Ok(sample) => format!("{}={}", sample.key_expr(), text(Some(sample.payload()))),
+                    Err(error) => format!("err={}", text(Some(error.payload()))),
+                });
+            }
+            if !seen.is_empty() {
+                print_line(format!("GOT {}", seen.join(";")));
+            }
+        }
+    });
+    let meta = session.declare_publisher("test/api/meta").await.map_err(error)?;
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            if meta.matching_status().await.is_ok_and(|status| status.matching()) {
+                let _ = meta.put("meta-payload").encoding("application/json").attachment("peer-att").await;
+                let _ = meta.delete().await;
+            }
+        }
+    });
+    Ok(())
 }
