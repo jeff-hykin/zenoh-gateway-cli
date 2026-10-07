@@ -1886,6 +1886,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "jpeg-encoder"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0370574b86f7eca156b9f298392b5e69a23f8c86f3f865add60bbc2e79467a6"
+
+[[package]]
 name = "js-sys"
 version = "0.3.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5253,8 +5259,7 @@ dependencies = [
 [[package]]
 name = "zenoh"
 version = "1.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5df040795169d4b6e4fc8a5f9dce81b5210d1d606399634ec380deda30c347f"
+source = "git+https://github.com/jeff-hykin/zenoh-vendor?tag=zenoh-1.6.2-patch.1#3148154ba096252497a9c564375e0d4c8bf7b6e9"
 dependencies = [
  "ahash",
  "arc-swap",
@@ -5385,16 +5390,19 @@ dependencies = [
 
 [[package]]
 name = "zenoh-dimos-codecs"
-version = "0.2.0"
-source = "git+https://github.com/jeff-hykin/zenoh-dimos-codecs?rev=013142da5ba4777a6d00993acc85148d0fe674ce#013142da5ba4777a6d00993acc85148d0fe674ce"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6cc377bfa6c03c027c79751af4c60eac393bd4d74d59d8e979c9f8fa1497e166"
 dependencies = [
  "anyhow",
  "image-webp",
+ "jpeg-encoder",
  "jxl-oxide",
  "libloading 0.9.0",
  "log",
  "png",
- "zenoh-web",
+ "serde_json",
+ "zenoh-gateway",
  "zune-jpeg",
 ]
 
@@ -5416,6 +5424,56 @@ dependencies = [
  "zenoh",
  "zenoh-macros",
  "zenoh-util",
+]
+
+[[package]]
+name = "zenoh-gateway"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2377ba36fd8e50edfa71b9dabc28dfa396245269fd5674a01b0fc0e0e8aebbd"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "bytes",
+ "futures",
+ "hmac",
+ "log",
+ "openh264",
+ "openh264-sys2",
+ "rav1e",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha1",
+ "tokio",
+ "tower-http",
+ "unsafe-libopus",
+ "zenoh",
+ "zenoh-ext",
+ "zenoh-web-rtc",
+ "zenoh-web-webrtc",
+ "zstd",
+]
+
+[[package]]
+name = "zenoh-gateway-cli"
+version = "0.5.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "env_logger",
+ "json5",
+ "log",
+ "rav1e",
+ "serde",
+ "serde_json",
+ "tokio",
+ "zenoh",
+ "zenoh-dimos-codecs",
+ "zenoh-ext",
+ "zenoh-gateway",
 ]
 
 [[package]]
@@ -5802,54 +5860,6 @@ dependencies = [
  "winapi",
  "zenoh-core",
  "zenoh-result",
-]
-
-[[package]]
-name = "zenoh-web"
-version = "0.4.1"
-source = "git+https://github.com/jeff-hykin/zenoh-web?rev=63b72ddd507fd31cd91dc1c3cc350336ebe08b89#63b72ddd507fd31cd91dc1c3cc350336ebe08b89"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "bytes",
- "futures",
- "hmac",
- "log",
- "openh264",
- "openh264-sys2",
- "reqwest",
- "serde",
- "serde_json",
- "sha1",
- "tokio",
- "tower-http",
- "unsafe-libopus",
- "zenoh",
- "zenoh-ext",
- "zenoh-web-rtc",
- "zenoh-web-webrtc",
- "zstd",
-]
-
-[[package]]
-name = "zenoh-web-cli"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "clap",
- "env_logger",
- "json5",
- "log",
- "rav1e",
- "serde",
- "serde_json",
- "tokio",
- "zenoh",
- "zenoh-dimos-codecs",
- "zenoh-ext",
- "zenoh-web",
 ]
 
 [[package]]
