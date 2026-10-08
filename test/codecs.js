@@ -124,7 +124,7 @@ try {
             const stats = subscription.gatewayStats?.stats
             subscription.close()
             element.remove()
-            return { ...outcome, width, height, means, metadata: frames.at(-1) ?? null, frames: frames.length, decodeErrors: subscription.decodeErrors, keyframes: stats?.keyframes, encodingErrors: stats?.encodingErrors, lastEncodingError: stats?.lastEncodingError }
+            return { ...outcome, width, height, means, metadata: frames.at(-1) ?? null, frames: frames.length, decodeErrors: subscription.decodeErrors, keyframes: stats?.keyframes, cpuScaleCap: stats?.cpuScaleCap, encodingErrors: stats?.encodingErrors, lastEncodingError: stats?.lastEncodingError }
         }))
         client.close()
         return results
@@ -138,10 +138,110 @@ try {
             continue
         }
         const worst = Math.max(...result.means.flatMap((mean, quadrant) => mean.map((value, channel) => Math.abs(value - testCase.quadrants[quadrant][channel]))))
-        check(result.width === 320 && result.height === 240 && worst <= testCase.tolerance,
-            `${label}: video ${result.width}x${result.height}, quadrant means ${JSON.stringify(result.means)} within ${testCase.tolerance} of ${JSON.stringify(testCase.quadrants)} (worst ${worst}; ${result.frames} frames, keyframes ${result.keyframes}, codec errors ${result.encodingErrors}${result.lastEncodingError ? ` "${result.lastEncodingError}"` : ""})`)
-        check(result.metadata?.width === 320 && result.metadata?.sourceWidth === 320 && result.decodeErrors === 0, `${label}: per-frame metadata (${JSON.stringify(result.metadata)})`)
+        // full size, unless the gateway's CPU governor shrank it (a loaded machine) and says so; the aspect stays 4:3
+        const fullSize = result.width === 320 && result.height === 240
+        const governed = result.cpuScaleCap < 1 && result.width >= 80 && result.width < 320 && Math.abs(result.width / result.height - 4 / 3) < 0.02
+        check((fullSize || governed) && worst <= testCase.tolerance,
+            `${label}: video ${result.width}x${result.height}, quadrant means ${JSON.stringify(result.means)} within ${testCase.tolerance} of ${JSON.stringify(testCase.quadrants)} (worst ${worst}; cpu scale cap ${result.cpuScaleCap}; ${result.frames} frames, keyframes ${result.keyframes}, codec errors ${result.encodingErrors}${result.lastEncodingError ? ` "${result.lastEncodingError}"` : ""})`)
+        check(result.metadata?.width === result.width && result.metadata?.sourceWidth === 320 && result.decodeErrors === 0, `${label}: per-frame metadata (${JSON.stringify(result.metadata)})`)
     }
+
+    const switchCase = cases.find((c) => c.kind === "video")
+    $.logStep(`video: 15 quick switches and an in-place update on ${switchCase.key}`)
+    // one evaluate per step (each must finish within astral's evaluate timeout); state lives on window
+    await page.evaluate(async (bridgeUrl, key, codec) => {
+        const { connect } = await import("/client/zenoh_gateway.js")
+        const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+        const element = document.createElement("video")
+        element.muted = true
+        element.playsInline = true
+        document.body.append(element)
+        const client = await connect(bridgeUrl)
+        const nextFrame = () => Promise.race([new Promise((resolve) => element.requestVideoFrameCallback(() => resolve(true))), sleep(3000).then(() => false)])
+        const counted = () => { globalThis.switchTest.messages++ }
+        const play = () => Promise.race([element.play().catch(() => {}), sleep(3000)])
+        globalThis.switchTest = { client, element, nextFrame, play, counted, messages: 0, key, codec, subscription: client.subscribe(key, { encoding: codec, maxHz: 10 }, counted) }
+        await globalThis.switchTest.subscription.ready()
+    }, { args: [bridge.url, switchCase.key, switchCase.codec] })
+    const frozen = []
+    for (let round = 0; round < 15; round++) {
+        // closed and reopened at once, as a page switching cameras does
+        // started in the page and polled: astral gives an evaluate 10 s and then runs it again
+        await page.evaluate(() => {
+            globalThis.switchTest.result = undefined
+            ;(async () => {
+                const test = globalThis.switchTest
+                test.subscription.close()
+                test.messages = 0
+                test.subscription = test.client.subscribe(test.key, { encoding: test.codec, maxHz: 10 }, test.counted)
+                try {
+                    const timedOut = await Promise.race([test.subscription.ready().then(() => false), new Promise((resolve) => setTimeout(() => resolve(true), 8000))])
+                    if (timedOut) {
+                        return `not ready after 8 s (state ${test.subscription.state}, rejection ${test.subscription.rejectionReason})`
+                    }
+                    test.element.srcObject = test.subscription.mediaStream
+                    await test.play()
+                    if ((await test.nextFrame()) && (await test.nextFrame())) {
+                        return "ok"
+                    }
+                    const track = test.subscription.mediaStream?.getVideoTracks()[0]
+                    const report = track && test.client._peer ? await test.client._peer.getStats(track) : new Map()
+                    const inbound = [...report.values()].find((entry) => entry.type === "inbound-rtp") ?? {}
+                    await test.client.pollStats()
+                    const gateway = JSON.stringify({ bandwidth: test.client.gatewayStats?.bandwidth, stream: test.subscription.gatewayStats?.stats, allocation: test.subscription.gatewayStats?.allocation })
+                    const rtp = ["bytesReceived", "headerBytesReceived", "packetsReceived", "packetsLost", "framesReceived", "framesDecoded", "framesDropped", "keyFramesDecoded", "pliCount", "nackCount", "freezeCount"].map((name) => `${name} ${inbound[name]}`).join(", ")
+                    return `no frames shown (${test.messages} messages on the data channel, track ${track?.readyState}; rtp: ${rtp}; gateway: ${gateway})`
+                } catch (error) {
+                    return error.message
+                }
+            })().then((outcome) => { globalThis.switchTest.result = outcome })
+        })
+        let outcome
+        for (let poll = 0; poll < 60 && outcome === undefined; poll++) {
+            await $.sleep(500)
+            outcome = await page.evaluate(() => globalThis.switchTest.result)
+        }
+        outcome ??= "round never finished (30 s)"
+        if (outcome !== "ok") {
+            frozen.push(`round ${round}: ${outcome}`)
+        }
+    }
+    await page.evaluate(() => {
+        globalThis.switchTest.final = undefined
+        ;(async () => {
+            const test = globalThis.switchTest
+            // update(): same subscription and track, a smaller picture
+            const before = test.element.videoWidth
+            await test.subscription.update({ maxResolution: [160, 120], playoutDelay: [0, 100] })
+            let resized = false
+            for (let index = 0; index < 20 && !resized; index++) {
+                await test.nextFrame()
+                // within maxResolution (the CPU governor may shrink it further on a loaded machine)
+                resized = test.element.videoWidth > 0 && test.element.videoWidth <= 160
+            }
+            const refused = await test.subscription.update({ encoding: "raw" }).then(() => "accepted", (error) => error.message)
+            const options = test.subscription.options
+            test.subscription.close()
+            test.element.remove()
+            test.client.close()
+            return { before, resized, width: test.element.videoWidth, refused, options }
+        })().then((final) => { globalThis.switchTest.final = final }, (error) => { globalThis.switchTest.final = { error: error.message } })
+    })
+    let switching
+    for (let poll = 0; poll < 120 && switching === undefined; poll++) {
+        await $.sleep(500)
+        switching = await page.evaluate(() => globalThis.switchTest.final)
+    }
+    switching ??= { error: "update() steps never finished (60 s)" }
+    if (switching.error) {
+        check(false, `update(): ${switching.error}`)
+        switching = { before: 0, resized: false, refused: "", options: {} }
+    }
+    switching.frozen = frozen
+    check(switching.frozen.length === 0, `quick switches: every one of 15 shows video (${JSON.stringify(switching.frozen)})`)
+    check(switching.before > 160 && switching.resized, `update(): ${switching.before} wide, then at most 160 on the same subscription (now ${switching.width})`)
+    check(switching.refused.includes("can't change on a running subscription"), `update(): an option that needs a new subscription is refused (${switching.refused})`)
+    check(JSON.stringify(switching.options.maxResolution) === "[160,120]", `update(): the subscription's options now hold the change (${JSON.stringify(switching.options)})`)
 
     $.logStep("depth: lossless over the data channel")
     const depthCases = cases.filter((c) => c.kind === "depth")
