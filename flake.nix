@@ -3,7 +3,7 @@
 
     inputs = {
         # lib.crossRust (crate2nix + zig) and its nixpkgs / rust-overlay pins, so crates are shared with the other zenoh-gateway flakes
-        zenoh-gateway.url = "github:jeff-hykin/zenoh-gateway";
+        zenoh-gateway.url = "github:jeff-hykin/zenoh-gateway?ref=jeff/zenoh_1.10.1"; # back to main once merged
         nixpkgs.follows = "zenoh-gateway/nixpkgs";
         rust-overlay.follows = "zenoh-gateway/rust-overlay";
     };
