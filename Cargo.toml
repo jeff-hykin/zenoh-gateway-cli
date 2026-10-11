@@ -15,9 +15,9 @@ name = "zenoh-gateway"
 path = "src/main.rs"
 
 [dependencies]
-zenoh-gateway = { version = "0.5.2", features = ["cloudflare"] }
+zenoh-gateway = { version = "0.5.4", git = "https://github.com/jeff-hykin/zenoh-gateway", branch = "jeff/zenoh_1.10.1", features = ["cloudflare"] }
 # the codecs, and the hardware video encoders picked at startup (GStreamer is loaded at runtime, so building needs none)
-zenoh-dimos-codecs = { version = "0.3.0", features = ["videotoolbox", "gstreamer"] }
+zenoh-dimos-codecs = { version = "0.3.1", git = "https://github.com/jeff-hykin/zenoh-dimos-codecs", branch = "jeff/zenoh_1.10.1", features = ["videotoolbox", "gstreamer"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "process"] }
 clap = { version = "4", features = ["derive", "env"] }
 anyhow = "1"
@@ -30,12 +30,12 @@ serde_json = "1"
 # the e2e suites' zenoh peer and the external-codec server (examples/)
 [dev-dependencies]
 # tests/zenoh_signalling.rs connects to the command the way zenoh-gateway-relay does
-zenoh-gateway = { version = "0.5.2", features = ["client"] }
-zenoh = "=1.6.2"
-zenoh-ext = { version = "=1.6.2", features = ["unstable"] }
+zenoh-gateway = { version = "0.5.4", git = "https://github.com/jeff-hykin/zenoh-gateway", branch = "jeff/zenoh_1.10.1", features = ["client"] }
+zenoh = "=1.10.1"
+zenoh-ext = { version = "=1.10.1", features = ["unstable"] }
 # custom_codec's AV1 encoder (an application's own encoder, as a hardware one would plug in)
 rav1e = { version = "0.8", default-features = false, features = ["threading"] }
 
 [patch.crates-io]
-# zenoh 1.6.2 plus a routing fix (puts dropped after a publisher is undeclared): https://github.com/jeff-hykin/zenoh-vendor
-zenoh = { git = "https://github.com/jeff-hykin/zenoh-vendor", tag = "zenoh-1.6.2-patch.1" }
+# zenoh 1.10.1 plus a routing fix (puts dropped after a publisher is undeclared): https://github.com/jeff-hykin/zenoh-vendor
+zenoh = { git = "https://github.com/jeff-hykin/zenoh-vendor", tag = "zenoh-1.10.1-patch.1" }
