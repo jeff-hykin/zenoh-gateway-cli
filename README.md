@@ -66,8 +66,8 @@ offline).
 | `--connect <endpoint>` | | zenoh endpoint, e.g. `tcp/192.168.1.2:7447`; repeatable |
 | `--serve <dir>` | | serve a directory (`/` → `index.html`), live-editable on disk |
 | `--max-bandwidth-bytes-per-sec <n>` | none | cap every browser's budget below its estimate (known-slow link, tests) |
-| `--bandwidth-target-fraction <f>` | 0.75 | share of the estimate the allocator hands out; the rest is headroom that keeps queues short |
 | `--auth-file <file>` | none (anyone may do anything) | require a token: json5 map of tokens to grants, see [Auth](#auth) |
+| `--slowest-lease-heartbeat-allowed <secs>` | 60 | refuse a lease to a browser whose heartbeat deadline (`heartbeatMisses / heartbeatHz`) is longer: a frozen page keeps its leases that long |
 | `--ice-server <url>` | none | STUN/TURN for both ends, e.g. `stun:stun.l.google.com:19302`, `turn:user:pass@relay.example:3478`; repeatable |
 | `--turn-secret <secret>` | none | coturn's `static-auth-secret`: TURN servers without `user:pass@` get credentials minted per connection (valid 24 h) |
 | `--ice-servers-command <cmd>` | none | mint STUN/TURN servers per connection, added after `--ice-server`: run with `sh -c`, env `ZENOH_GATEWAY_ICE_SIDE` (`browser`/`gateway`) and `ZENOH_GATEWAY_ICE_TOKEN`; prints `{"iceServers": [...]}` or `[...]`. On failure or after 5 s, only `--ice-server` |

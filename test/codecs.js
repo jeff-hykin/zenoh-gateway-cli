@@ -383,12 +383,12 @@ try {
         out.reliableVideoError = await rejection({ encoding: "ros2_image", delivery: "reliable" })
         out.zstdVideoError = await rejection({ encoding: "ros2_image", compress: "zstd" })
         out.noneVideo = await rejection({ encoding: "ros2_image", compress: "none" })
-        // a channel the client never set up: the bridge refuses and closes it
+        // a channel the client never set up: the bridge refuses and closes it (after waiting 5 s for the client to)
         const rawPeer = first._peer
         const raw = rawPeer.createDataChannel(JSON.stringify({ type: "sub", key: depthKey, id: 999999, opts: { encoding: "ros2_jpeg" } }))
         out.rawClosed = await new Promise((resolve) => {
             raw.onclose = () => resolve(true)
-            setTimeout(() => resolve(false), 5000)
+            setTimeout(() => resolve(false), 8000)
         })
         // two frontends, same codec + quality: the second reuses encodes (same payload bytes)
         const second = await connect(bridgeUrl)

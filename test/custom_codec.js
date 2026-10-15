@@ -7,7 +7,7 @@
 // ZENOH_GATEWAY_CUSTOM_CODEC_BIN=<path> runs another build of the same program (e.g. a downstream crate's).
 
 import { $ } from "https://esm.sh/dax-sh@0.42.0"
-import { bridgeDir, buildAll, check, finish, launchBrowser, machineLoad, startBridge, startPeer } from "./harness.js"
+import { bridgeDir, buildAll, check, finish, launchBrowser, machineLoad, releaseDir, startBridge, startPeer } from "./harness.js"
 
 const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-gateway-custom-codec-" }))
 console.log(`machine load at start: ${await machineLoad()}`)
@@ -21,7 +21,7 @@ const tone = new Int16Array(960).map((_, index) => Math.round(Math.sin(2 * Math.
 try {
     const otherBinary = Deno.env.get("ZENOH_GATEWAY_CUSTOM_CODEC_BIN")
     const webRoot = await buildAll(scratch, otherBinary ? [] : ["custom_codec"])
-    const binary = otherBinary ?? bridgeDir.join("target/release/examples/custom_codec").toString()
+    const binary = otherBinary ?? releaseDir.join("examples/custom_codec").toString()
     scratch.join("text.txt").writeTextSync(text)
     scratch.join("swatch.rgb").writeSync(new Uint8Array(swatch))
     scratch.join("tone.pcm").writeSync(new Uint8Array(tone.buffer))

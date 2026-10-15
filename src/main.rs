@@ -28,10 +28,10 @@ struct Cli {
     /// link or to test allocation on localhost.
     #[arg(long)]
     max_bandwidth_bytes_per_sec: Option<f64>,
-    /// Fraction of the estimated bandwidth the allocator hands out; the rest keeps the path's
-    /// queues short for strict-priority streams.
-    #[arg(long, default_value_t = 0.75)]
-    bandwidth_target_fraction: f64,
+    /// The slowest heartbeat a browser may hold a lease with, in seconds (heartbeatMisses / heartbeatHz): a page that
+    /// froze keeps its leases until that much silence.
+    #[arg(long, default_value_t = 60.0)]
+    slowest_lease_heartbeat_allowed: f64,
     /// Require a token: a json5 file mapping tokens to grants (see README "Auth"); re-read when it changes,
     /// and a token removed or changed there is revoked (its connections close).
     #[arg(long)]
@@ -202,7 +202,8 @@ async fn terminated() {
 async fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,zenoh=warn,zenoh_ext=warn,zenoh_gateway=info,rtc=warn,webrtc=warn")).init();
     let cli = Cli::parse();
-    let mut builder = zenoh_gateway::Server::builder().bandwidth_target_fraction(cli.bandwidth_target_fraction);
+    anyhow::ensure!(cli.slowest_lease_heartbeat_allowed.is_finite() && cli.slowest_lease_heartbeat_allowed > 0.0, "--slowest-lease-heartbeat-allowed must be a positive number of seconds");
+    let mut builder = zenoh_gateway::Server::builder().slowest_lease_heartbeat_allowed(Duration::from_secs_f64(cli.slowest_lease_heartbeat_allowed));
     let video = zenoh_dimos_codecs::encoders::select(cli.video_encoder)?;
     info!("video encoder: {}", video.name);
     if let Some(factory) = video.factory {

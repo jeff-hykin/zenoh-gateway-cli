@@ -7,6 +7,8 @@ import { buildWeb, crateRoots, repoRoot } from "../tools/build_web.js"
 export { repoRoot }
 /** where cargo builds the zenoh-gateway binary and the examples */
 export const bridgeDir = repoRoot
+/** cargo's release output (CARGO_TARGET_DIR when set) */
+export const releaseDir = $.path(Deno.env.get("CARGO_TARGET_DIR") ?? bridgeDir.join("target").toString()).join("release")
 /** zenoh-dimos-codecs' fixtures, at the revision Cargo.lock pins */
 export const fixturesDir = (await crateRoots()).codecs.join("test/fixtures")
 
@@ -143,7 +145,7 @@ const browsers = []
  */
 export async function startPeer(extraArgs) {
     const zenohPort = freePort()
-    const peer = $`${bridgeDir.join("target/release/examples/test_peer")} --listen tcp/127.0.0.1:${zenohPort} ${extraArgs}`
+    const peer = $`${releaseDir.join("examples/test_peer")} --listen tcp/127.0.0.1:${zenohPort} ${extraArgs}`
         .stdout("piped").stderr("inherit").noThrow().spawn()
     children.push(peer)
     const output = lineCollector(peer.stdout(), "peer")
@@ -160,7 +162,7 @@ export async function startPeer(extraArgs) {
  * @param {string} binary
  * @param {object} zenohConfig more zenoh config for the bridge's session
  */
-export async function startBridge(scratch, zenohPort, webRoot, extraArgs = [], binary = bridgeDir.join("target/release/zenoh-gateway").toString(), zenohConfig = {}) {
+export async function startBridge(scratch, zenohPort, webRoot, extraArgs = [], binary = releaseDir.join("zenoh-gateway").toString(), zenohConfig = {}) {
     const httpPort = freePort()
     const configPath = scratch.join(`bridge_zenoh_${httpPort}.json5`)
     // isolated zenoh: no multicast scouting, so the test never touches other zenoh systems
