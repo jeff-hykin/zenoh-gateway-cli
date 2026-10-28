@@ -39,7 +39,7 @@ rec {
   #
 
   rootCrate = rec {
-    packageId = "zenoh-web-cli";
+    packageId = "zenoh-gateway-cli";
 
     # Use this attribute to refer to the derivation building your root crate package.
     # You can override the features with rootCrate.build.override { features = [ "default" "feature1" ... ]; }.
@@ -55,10 +55,10 @@ rec {
   # You can override the features with
   # workspaceMembers."${crateName}".build.override { features = [ "default" "feature1" ... ]; }.
   workspaceMembers = {
-    "zenoh-web-cli" = rec {
-      packageId = "zenoh-web-cli";
+    "zenoh-gateway-cli" = rec {
+      packageId = "zenoh-gateway-cli";
       build = internal.buildRustCrateWithFeatures {
-        packageId = "zenoh-web-cli";
+        packageId = "zenoh-gateway-cli";
       };
 
       # Debug support which might change between releases.
@@ -1943,7 +1943,7 @@ rec {
           "usage" = [ "clap_builder/usage" ];
           "wrap_help" = [ "clap_builder/wrap_help" ];
         };
-        resolvedDefaultFeatures = [ "color" "default" "derive" "error-context" "help" "std" "suggestions" "usage" ];
+        resolvedDefaultFeatures = [ "color" "default" "derive" "env" "error-context" "help" "std" "suggestions" "usage" ];
       };
       "clap_builder" = rec {
         crateName = "clap_builder";
@@ -1982,7 +1982,7 @@ rec {
           "unstable-v5" = [ "deprecated" ];
           "wrap_help" = [ "help" "dep:terminal_size" ];
         };
-        resolvedDefaultFeatures = [ "color" "error-context" "help" "std" "suggestions" "usage" ];
+        resolvedDefaultFeatures = [ "color" "env" "error-context" "help" "std" "suggestions" "usage" ];
       };
       "clap_derive" = rec {
         crateName = "clap_derive";
@@ -5767,6 +5767,21 @@ rec {
           }
         ];
 
+      };
+      "jpeg-encoder" = rec {
+        crateName = "jpeg-encoder";
+        version = "0.7.1";
+        edition = "2024";
+        sha256 = "19k7jkkw5fv0vmd8cgvgr3w276p6nn986aczdcawlzkgp1s0adx0";
+        libName = "jpeg_encoder";
+        authors = [
+          "Volker Ströbel <volkerstroebel@mysurdity.de>"
+        ];
+        features = {
+          "default" = [ "std" ];
+          "simd" = [ "std" ];
+        };
+        resolvedDefaultFeatures = [ "default" "std" ];
       };
       "js-sys" = rec {
         crateName = "js-sys";
@@ -10983,55 +10998,6 @@ rec {
         };
         resolvedDefaultFeatures = [ "ifaces" "marshal" "replay" ];
       };
-      "rtc-srtp" = rec {
-        crateName = "rtc-srtp";
-        version = "0.21.0";
-        edition = "2024";
-        sha256 = "0vn7m0a08i3b8kcfb0z7jbgvrss71wvzz37sm5cjk03397zsn692";
-        libName = "rtc_srtp";
-        authors = [
-          "Rain Liu <yliu@webrtc.rs>"
-        ];
-        dependencies = [
-          {
-            name = "byteorder";
-            packageId = "byteorder";
-          }
-          {
-            name = "bytes";
-            packageId = "bytes";
-          }
-          {
-            name = "rtc-crypto";
-            packageId = "rtc-crypto";
-            rename = "crypto";
-            usesDefaultFeatures = false;
-          }
-          {
-            name = "rtc-rtcp";
-            packageId = "rtc-rtcp";
-            rename = "rtcp";
-          }
-          {
-            name = "rtc-rtp";
-            packageId = "rtc-rtp";
-            rename = "rtp";
-          }
-          {
-            name = "rtc-shared";
-            packageId = "rtc-shared";
-            rename = "shared";
-            usesDefaultFeatures = false;
-            features = [ "marshal" "replay" ];
-          }
-        ];
-        features = {
-          "crypto-aws-lc-rs" = [ "crypto/crypto-aws-lc-rs" ];
-          "crypto-ring" = [ "crypto/crypto-ring" ];
-          "default" = [ "crypto-ring" ];
-        };
-        resolvedDefaultFeatures = [ "crypto-ring" ];
-      };
       "rtc-stun" = rec {
         crateName = "rtc-stun";
         version = "0.21.0";
@@ -13765,7 +13731,7 @@ rec {
           "tls12" = [ "rustls/tls12" ];
           "zlib" = [ "rustls/zlib" ];
         };
-        resolvedDefaultFeatures = [ "ring" "tls12" ];
+        resolvedDefaultFeatures = [ "logging" "ring" "tls12" ];
       };
       "tokio-tungstenite" = rec {
         crateName = "tokio-tungstenite";
@@ -17146,7 +17112,12 @@ rec {
         crateName = "zenoh";
         version = "1.6.2";
         edition = "2021";
-        sha256 = "0zrl1jiys39qxhs9cf86sv8i0lhvx3fgk9f89xp4p78njl3h9py5";
+        workspace_member = null;
+        src = pkgs.fetchgit {
+          url = "https://github.com/jeff-hykin/zenoh-vendor";
+          rev = "3148154ba096252497a9c564375e0d4c8bf7b6e9";
+          sha256 = "1xgdh5z2dzvsn7lny99gpslkdi4s396l4g07nb18zki2x0jvjpg4";
+        };
         authors = [
           "Julien Enoch <julien@enoch.fr>"
           "Luca Cominardi <luca.cominardi@zettascale.tech>"
@@ -17677,14 +17648,9 @@ rec {
       };
       "zenoh-dimos-codecs" = rec {
         crateName = "zenoh-dimos-codecs";
-        version = "0.2.0";
+        version = "0.3.9";
         edition = "2024";
-        workspace_member = null;
-        src = pkgs.fetchgit {
-          url = "https://github.com/jeff-hykin/zenoh-dimos-codecs";
-          rev = "013142da5ba4777a6d00993acc85148d0fe674ce";
-          sha256 = "1i29b061720y08vlji7z6d0wxwpyfa9rxkw6vz81rsncmxp1wqmh";
-        };
+        sha256 = "0cj1my7nbq0ap07ix892qx9bkfzzd3i36zwc244wbddr2vab6hcj";
         libName = "zenoh_dimos_codecs";
         dependencies = [
           {
@@ -17694,6 +17660,10 @@ rec {
           {
             name = "image-webp";
             packageId = "image-webp";
+          }
+          {
+            name = "jpeg-encoder";
+            packageId = "jpeg-encoder";
           }
           {
             name = "jxl-oxide";
@@ -17713,8 +17683,12 @@ rec {
             packageId = "png";
           }
           {
-            name = "zenoh-web";
-            packageId = "zenoh-web";
+            name = "serde_json";
+            packageId = "serde_json";
+          }
+          {
+            name = "zenoh-gateway";
+            packageId = "zenoh-gateway";
           }
           {
             name = "zune-jpeg";
@@ -17797,6 +17771,220 @@ rec {
           "unstable" = [ "zenoh/internal" "zenoh/unstable" ];
         };
         resolvedDefaultFeatures = [ "default" "unstable" ];
+      };
+      "zenoh-gateway" = rec {
+        crateName = "zenoh-gateway";
+        version = "0.5.33";
+        edition = "2024";
+        sha256 = "1g1jladnjz0l8km9pn279wr64jq139240054vrpmdsc0rrj3d09n";
+        libName = "zenoh_gateway";
+        dependencies = [
+          {
+            name = "anyhow";
+            packageId = "anyhow";
+          }
+          {
+            name = "async-trait";
+            packageId = "async-trait";
+          }
+          {
+            name = "axum";
+            packageId = "axum";
+          }
+          {
+            name = "base64";
+            packageId = "base64 0.22.1";
+          }
+          {
+            name = "bytes";
+            packageId = "bytes";
+          }
+          {
+            name = "futures";
+            packageId = "futures";
+          }
+          {
+            name = "hmac";
+            packageId = "hmac";
+          }
+          {
+            name = "log";
+            packageId = "log";
+          }
+          {
+            name = "openh264";
+            packageId = "openh264";
+          }
+          {
+            name = "openh264-sys2";
+            packageId = "openh264-sys2";
+          }
+          {
+            name = "parking_lot";
+            packageId = "parking_lot";
+          }
+          {
+            name = "rav1e";
+            packageId = "rav1e";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "threading" ];
+          }
+          {
+            name = "reqwest";
+            packageId = "reqwest";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "json" "rustls-tls" ];
+          }
+          {
+            name = "serde";
+            packageId = "serde";
+            features = [ "derive" ];
+          }
+          {
+            name = "serde_json";
+            packageId = "serde_json";
+          }
+          {
+            name = "sha1";
+            packageId = "sha1";
+          }
+          {
+            name = "tokio";
+            packageId = "tokio";
+            features = [ "full" ];
+          }
+          {
+            name = "tokio-rustls";
+            packageId = "tokio-rustls";
+            usesDefaultFeatures = false;
+            features = [ "ring" "tls12" "logging" ];
+          }
+          {
+            name = "tower-http";
+            packageId = "tower-http";
+            features = [ "fs" "cors" ];
+          }
+          {
+            name = "unsafe-libopus";
+            packageId = "unsafe-libopus";
+          }
+          {
+            name = "zenoh";
+            packageId = "zenoh";
+          }
+          {
+            name = "zenoh-ext";
+            packageId = "zenoh-ext";
+            features = [ "unstable" ];
+          }
+          {
+            name = "zenoh-web-rtc";
+            packageId = "zenoh-web-rtc";
+            rename = "rtc";
+          }
+          {
+            name = "zenoh-web-webrtc";
+            packageId = "zenoh-web-webrtc";
+            rename = "webrtc";
+          }
+          {
+            name = "zstd";
+            packageId = "zstd";
+          }
+        ];
+        features = {
+          "av1" = [ "dep:rav1e" ];
+          "client" = [ "dep:reqwest" ];
+          "cloudflare" = [ "dep:reqwest" ];
+          "default" = [ "av1" ];
+          "dhat-heap" = [ "dep:dhat" ];
+        };
+        resolvedDefaultFeatures = [ "av1" "client" "cloudflare" "default" ];
+      };
+      "zenoh-gateway-cli" = rec {
+        crateName = "zenoh-gateway-cli";
+        version = "0.5.2";
+        edition = "2024";
+        crateBin = [
+          {
+            name = "zenoh-gateway";
+            path = "src/main.rs";
+            requiredFeatures = [ ];
+          }
+        ];
+        src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
+        dependencies = [
+          {
+            name = "anyhow";
+            packageId = "anyhow";
+          }
+          {
+            name = "clap";
+            packageId = "clap";
+            features = [ "derive" "env" ];
+          }
+          {
+            name = "env_logger";
+            packageId = "env_logger";
+          }
+          {
+            name = "json5";
+            packageId = "json5";
+          }
+          {
+            name = "log";
+            packageId = "log";
+          }
+          {
+            name = "serde";
+            packageId = "serde";
+            features = [ "derive" ];
+          }
+          {
+            name = "serde_json";
+            packageId = "serde_json";
+          }
+          {
+            name = "tokio";
+            packageId = "tokio";
+            features = [ "macros" "rt-multi-thread" "signal" "process" ];
+          }
+          {
+            name = "zenoh-dimos-codecs";
+            packageId = "zenoh-dimos-codecs";
+            features = [ "videotoolbox" "gstreamer" ];
+          }
+          {
+            name = "zenoh-gateway";
+            packageId = "zenoh-gateway";
+            features = [ "cloudflare" ];
+          }
+        ];
+        devDependencies = [
+          {
+            name = "rav1e";
+            packageId = "rav1e";
+            usesDefaultFeatures = false;
+            features = [ "threading" ];
+          }
+          {
+            name = "zenoh";
+            packageId = "zenoh";
+          }
+          {
+            name = "zenoh-ext";
+            packageId = "zenoh-ext";
+            features = [ "unstable" ];
+          }
+          {
+            name = "zenoh-gateway";
+            packageId = "zenoh-gateway";
+            features = [ "client" ];
+          }
+        ];
+
       };
       "zenoh-keyexpr" = rec {
         crateName = "zenoh-keyexpr";
@@ -19313,208 +19501,11 @@ rec {
         features = {
         };
       };
-      "zenoh-web" = rec {
-        crateName = "zenoh-web";
-        version = "0.4.1";
-        edition = "2024";
-        workspace_member = null;
-        src = pkgs.fetchgit {
-          url = "https://github.com/jeff-hykin/zenoh-web";
-          rev = "63b72ddd507fd31cd91dc1c3cc350336ebe08b89";
-          sha256 = "0frfsc5j8jq0f14cmcidx64mmswf3g5naf71si5gqqbnq4r1bigm";
-        };
-        libName = "zenoh_web";
-        dependencies = [
-          {
-            name = "anyhow";
-            packageId = "anyhow";
-          }
-          {
-            name = "async-trait";
-            packageId = "async-trait";
-          }
-          {
-            name = "axum";
-            packageId = "axum";
-          }
-          {
-            name = "base64";
-            packageId = "base64 0.22.1";
-          }
-          {
-            name = "bytes";
-            packageId = "bytes";
-          }
-          {
-            name = "futures";
-            packageId = "futures";
-          }
-          {
-            name = "hmac";
-            packageId = "hmac";
-          }
-          {
-            name = "log";
-            packageId = "log";
-          }
-          {
-            name = "openh264";
-            packageId = "openh264";
-          }
-          {
-            name = "openh264-sys2";
-            packageId = "openh264-sys2";
-          }
-          {
-            name = "reqwest";
-            packageId = "reqwest";
-            optional = true;
-            usesDefaultFeatures = false;
-            features = [ "json" "rustls-tls" ];
-          }
-          {
-            name = "serde";
-            packageId = "serde";
-            features = [ "derive" ];
-          }
-          {
-            name = "serde_json";
-            packageId = "serde_json";
-          }
-          {
-            name = "sha1";
-            packageId = "sha1";
-          }
-          {
-            name = "tokio";
-            packageId = "tokio";
-            features = [ "full" ];
-          }
-          {
-            name = "tower-http";
-            packageId = "tower-http";
-            features = [ "fs" "cors" ];
-          }
-          {
-            name = "unsafe-libopus";
-            packageId = "unsafe-libopus";
-          }
-          {
-            name = "zenoh";
-            packageId = "zenoh";
-          }
-          {
-            name = "zenoh-ext";
-            packageId = "zenoh-ext";
-            features = [ "unstable" ];
-          }
-          {
-            name = "zenoh-web-rtc";
-            packageId = "zenoh-web-rtc";
-            rename = "rtc";
-          }
-          {
-            name = "zenoh-web-webrtc";
-            packageId = "zenoh-web-webrtc";
-            rename = "webrtc";
-          }
-          {
-            name = "zstd";
-            packageId = "zstd";
-          }
-        ];
-        features = {
-          "client" = [ "dep:reqwest" ];
-        };
-        resolvedDefaultFeatures = [ "client" ];
-      };
-      "zenoh-web-cli" = rec {
-        crateName = "zenoh-web-cli";
-        version = "0.4.0";
-        edition = "2024";
-        crateBin = [
-          {
-            name = "zenoh-web";
-            path = "src/main.rs";
-            requiredFeatures = [ ];
-          }
-        ];
-        src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
-        dependencies = [
-          {
-            name = "anyhow";
-            packageId = "anyhow";
-          }
-          {
-            name = "clap";
-            packageId = "clap";
-            features = [ "derive" ];
-          }
-          {
-            name = "env_logger";
-            packageId = "env_logger";
-          }
-          {
-            name = "json5";
-            packageId = "json5";
-          }
-          {
-            name = "log";
-            packageId = "log";
-          }
-          {
-            name = "serde";
-            packageId = "serde";
-            features = [ "derive" ];
-          }
-          {
-            name = "tokio";
-            packageId = "tokio";
-            features = [ "macros" "rt-multi-thread" "signal" ];
-          }
-          {
-            name = "zenoh-dimos-codecs";
-            packageId = "zenoh-dimos-codecs";
-            features = [ "videotoolbox" "gstreamer" ];
-          }
-          {
-            name = "zenoh-web";
-            packageId = "zenoh-web";
-          }
-        ];
-        devDependencies = [
-          {
-            name = "rav1e";
-            packageId = "rav1e";
-            usesDefaultFeatures = false;
-            features = [ "threading" ];
-          }
-          {
-            name = "serde_json";
-            packageId = "serde_json";
-          }
-          {
-            name = "zenoh";
-            packageId = "zenoh";
-          }
-          {
-            name = "zenoh-ext";
-            packageId = "zenoh-ext";
-            features = [ "unstable" ];
-          }
-          {
-            name = "zenoh-web";
-            packageId = "zenoh-web";
-            features = [ "client" ];
-          }
-        ];
-
-      };
       "zenoh-web-rtc" = rec {
         crateName = "zenoh-web-rtc";
-        version = "0.21.0-zw.2";
+        version = "0.21.0-zw.5";
         edition = "2024";
-        sha256 = "0gm1snp904lk329r2w636cki9cs3xz89y88ql416y6k9z0zkp5l5";
+        sha256 = "0wk11s4ypi3wgfdw2893f87yddxyl6g344rnbxny60y333bqksyc";
         libName = "rtc";
         authors = [
           "Rain Liu <yliu@webrtc.rs>"
@@ -19602,12 +19593,6 @@ rec {
             features = [ "marshal" "replay" ];
           }
           {
-            name = "rtc-srtp";
-            packageId = "rtc-srtp";
-            rename = "srtp";
-            usesDefaultFeatures = false;
-          }
-          {
             name = "rtc-stun";
             packageId = "rtc-stun";
             rename = "stun";
@@ -19660,6 +19645,12 @@ rec {
             packageId = "zenoh-web-rtc-sctp";
             rename = "sctp";
           }
+          {
+            name = "zenoh-web-rtc-srtp";
+            packageId = "zenoh-web-rtc-srtp";
+            rename = "srtp";
+            usesDefaultFeatures = false;
+          }
         ];
         features = {
           "crypto-aws-lc-rs" = [ "crypto/crypto-aws-lc-rs" "dtls/crypto-aws-lc-rs" "rustls/aws-lc-rs" "rcgen/aws_lc_rs" "ice/crypto-aws-lc-rs" "stun/crypto-aws-lc-rs" "srtp/crypto-aws-lc-rs" "turn/crypto-aws-lc-rs" ];
@@ -19670,9 +19661,9 @@ rec {
       };
       "zenoh-web-rtc-datachannel" = rec {
         crateName = "zenoh-web-rtc-datachannel";
-        version = "0.21.0-zw.2";
+        version = "0.21.0-zw.5";
         edition = "2024";
-        sha256 = "04idhlfh27fq1q3yjfi6bihnx9cx2hr92971r2jvpdb4i4knyqjr";
+        sha256 = "1a9x7ab8mr1mxnixqghifsxkfca0mivr2dmk9vfh50ly36zkfg29";
         libName = "rtc_datachannel";
         authors = [
           "Rain Liu <yliu@webrtc.rs>"
@@ -19707,9 +19698,9 @@ rec {
       };
       "zenoh-web-rtc-sctp" = rec {
         crateName = "zenoh-web-rtc-sctp";
-        version = "0.21.0-zw.2";
+        version = "0.21.0-zw.5";
         edition = "2024";
-        sha256 = "020r3r4c02pq4mhjdy0lz3vdf61q87bnpkccs6gfrvkjjfplzhks";
+        sha256 = "000xb1rlky2q6lj9gznfhx6x98cpn38b4jdqp5hjj6czz22mzpjd";
         libName = "rtc_sctp";
         authors = [
           "Rain Liu <yliu@webrtc.rs>"
@@ -19753,11 +19744,60 @@ rec {
         features = {
         };
       };
+      "zenoh-web-rtc-srtp" = rec {
+        crateName = "zenoh-web-rtc-srtp";
+        version = "0.21.0-zw.5";
+        edition = "2024";
+        sha256 = "1hdpxrgncjw2yxcm5gsyfs781r5cakfbp5wm2ird1c6q9xbqmdaw";
+        libName = "rtc_srtp";
+        authors = [
+          "Rain Liu <yliu@webrtc.rs>"
+        ];
+        dependencies = [
+          {
+            name = "byteorder";
+            packageId = "byteorder";
+          }
+          {
+            name = "bytes";
+            packageId = "bytes";
+          }
+          {
+            name = "rtc-crypto";
+            packageId = "rtc-crypto";
+            rename = "crypto";
+            usesDefaultFeatures = false;
+          }
+          {
+            name = "rtc-rtcp";
+            packageId = "rtc-rtcp";
+            rename = "rtcp";
+          }
+          {
+            name = "rtc-rtp";
+            packageId = "rtc-rtp";
+            rename = "rtp";
+          }
+          {
+            name = "rtc-shared";
+            packageId = "rtc-shared";
+            rename = "shared";
+            usesDefaultFeatures = false;
+            features = [ "marshal" "replay" ];
+          }
+        ];
+        features = {
+          "crypto-aws-lc-rs" = [ "crypto/crypto-aws-lc-rs" ];
+          "crypto-ring" = [ "crypto/crypto-ring" ];
+          "default" = [ "crypto-ring" ];
+        };
+        resolvedDefaultFeatures = [ "crypto-ring" ];
+      };
       "zenoh-web-webrtc" = rec {
         crateName = "zenoh-web-webrtc";
-        version = "0.21.0-zw.2";
+        version = "0.21.0-zw.5";
         edition = "2024";
-        sha256 = "0wah9sijw78qmnvrjipw5fw0kx5jc8z9b2kjpsfivymvlx9fslk7";
+        sha256 = "1adv3n7winp3zg8s0ji0xnvi5fiyr74ih32lmh32m8v45j70w1y9";
         libName = "webrtc";
         authors = [
           "Rain Liu <yliu@webrtc.rs>"
@@ -19808,6 +19848,13 @@ rec {
             packageId = "zenoh-web-rtc";
             rename = "rtc";
             usesDefaultFeatures = false;
+          }
+        ];
+        devDependencies = [
+          {
+            name = "tokio";
+            packageId = "tokio";
+            features = [ "macros" "rt-multi-thread" ];
           }
         ];
         features = {
