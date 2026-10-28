@@ -12,7 +12,7 @@ use zenoh_gateway::{Grant, IceServer};
 #[derive(Parser, Debug)]
 #[command(name = "zenoh-gateway", version, about = "A gateway from zenoh to browsers over WebRTC: data channels, video and audio tracks")]
 struct Cli {
-    /// HTTP port for signaling (POST /offer) and static files.
+    /// HTTP (or with --cert, HTTPS) port for signaling (POST /offer) and static files.
     #[arg(long, default_value_t = zenoh_gateway::DEFAULT_PORT)]
     port: u16,
     /// zenoh config file (json5).
@@ -24,6 +24,12 @@ struct Cli {
     /// Serve this directory over HTTP (so the UI is live-editable on disk).
     #[arg(long)]
     serve: Option<PathBuf>,
+    /// Serve HTTPS with this certificate chain (PEM), so tokens never cross the network in the clear (needs --key).
+    #[arg(long, requires = "key", conflicts_with = "no_http")]
+    cert: Option<PathBuf>,
+    /// The private key (PEM) of --cert.
+    #[arg(long, requires = "cert")]
+    key: Option<PathBuf>,
     /// Cap each frontend's bandwidth budget (bytes/s) below the estimate, e.g. for a known-slow
     /// link or to test allocation on localhost.
     #[arg(long)]
@@ -220,6 +226,9 @@ async fn main() -> anyhow::Result<()> {
     }
     if let Some(dir) = cli.serve {
         builder = builder.serve_dir(dir);
+    }
+    if let (Some(cert), Some(key)) = (cli.cert, cli.key) {
+        builder = builder.tls_files(cert, key);
     }
     if let Some(cap) = cli.max_bandwidth_bytes_per_sec {
         builder = builder.max_bandwidth_bytes_per_sec(cap);

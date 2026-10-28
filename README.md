@@ -61,10 +61,11 @@ offline).
 
 | flag | default | |
 |---|---|---|
-| `--port <n>` | 7448 | HTTP port: `POST /offer` signaling and static files |
+| `--port <n>` | 7448 | HTTP (HTTPS with `--cert`) port: `POST /offer` signaling and static files |
 | `--zenoh-config <file>` | zenoh defaults (peer, multicast scouting) | zenoh json5 config, including `access_control` |
 | `--connect <endpoint>` | | zenoh endpoint, e.g. `tcp/192.168.1.2:7447`; repeatable |
 | `--serve <dir>` | | serve a directory (`/` → `index.html`), live-editable on disk |
+| `--cert <pem>`, `--key <pem>` | none (plain HTTP) | serve HTTPS with this certificate chain and private key, so tokens never cross the network in the clear |
 | `--max-bandwidth-bytes-per-sec <n>` | none | cap every browser's budget below its estimate (known-slow link, tests) |
 | `--auth-file <file>` | none (anyone may do anything) | require a token: json5 map of tokens to grants, see [Auth](#auth) |
 | `--slowest-lease-heartbeat-allowed <secs>` | 60 | refuse a lease to a browser whose heartbeat deadline (`heartbeatMisses / heartbeatHz`) is longer: a frozen page keeps its leases that long |
