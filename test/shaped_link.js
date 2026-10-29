@@ -19,6 +19,9 @@ import { freePort } from "./harness.js"
  * @typedef {{ packets: number, bytes: number, dropped: number, lost: number, maxQueueBytes: number, maxQueueMs: number, delays: number[] }} DirectionStats
  */
 
+/** the drop-tail queue when a link sets none */
+export const defaultQueueLimitBytes = 1_000_000
+
 /**
  * One direction: packets queue FIFO (jitter delays a packet and everything behind it, it never
  * reorders), then leave at the rate limit. `options` is read live.
@@ -57,6 +60,7 @@ function shapedDirection(options, deliver) {
             await new Promise((resolve) => setTimeout(resolve, 1))
             const now = performance.now()
             const bytesPerSec = option("bytesPerSec", Infinity)
+            // up to 5 ms of link time (at least one 1500 B MTU packet): timers fire every 1-4 ms, and a one-packet bucket would cap the link at a packet per tick
             const bucketDepth = Number.isFinite(bytesPerSec) ? Math.max(1500, bytesPerSec * 0.005) : Infinity
             tokens = Math.min(tokens + ((now - last) / 1000) * bytesPerSec, bucketDepth)
             last = now
@@ -68,6 +72,7 @@ function shapedDirection(options, deliver) {
                 }
                 stats.packets++
                 stats.bytes += packet.data.length
+                // bounded memory: 200k delays are 1.6 MB
                 if (stats.delays.length < 200_000) {
                     stats.delays.push(now - packet.arrived)
                 }
@@ -77,7 +82,6 @@ function shapedDirection(options, deliver) {
     })()
     return {
         stats,
-        /** bytes waiting in the queue now */
         queuedBytes: () => queuedBytes,
         stop() {
             running = false
@@ -89,7 +93,7 @@ function shapedDirection(options, deliver) {
                 stats.lost++
                 return
             }
-            if (queuedBytes + data.length > option("queueLimitBytes", 1_000_000)) {
+            if (queuedBytes + data.length > option("queueLimitBytes", defaultQueueLimitBytes)) {
                 stats.dropped++
                 return
             }
@@ -118,25 +122,32 @@ export function startShaper(targetPort, link, host = "127.0.0.1") {
     const targetAddress = { transport: /** @type {"udp"} */ ("udp"), hostname: host, port: targetPort }
     /** @type {Deno.NetAddr | null} */
     let chromeAddress = null
+    let stopped = false
+    // after stop() the sockets are closed on purpose; anything failing before that is a real fault
+    const report = (what) => (error) => {
+        if (!stopped) {
+            console.warn(`shaped link (target port ${targetPort}): ${what}: ${error}`)
+        }
+    }
     const down = shapedDirection(link.down, (data) => {
         if (chromeAddress) {
-            chromeSide.send(data, chromeAddress).catch(() => {})
+            chromeSide.send(data, chromeAddress).catch(report("send toward Chrome"))
         }
     })
     const up = shapedDirection(link.up, (data) => {
-        bridgeSide.send(data, targetAddress).catch(() => {})
+        bridgeSide.send(data, targetAddress).catch(report("send toward the target"))
     })
     ;(async () => {
         for await (const [data, address] of chromeSide) {
             chromeAddress = /** @type {Deno.NetAddr} */ (address)
             up.push(data)
         }
-    })().catch(() => {})
+    })().catch(report("receive from Chrome"))
     ;(async () => {
         for await (const [data] of bridgeSide) {
             down.push(data)
         }
-    })().catch(() => {})
+    })().catch(report("receive from the target"))
     return {
         port: /** @type {Deno.NetAddr} */ (chromeSide.addr).port,
         down: down.stats,
@@ -144,12 +155,48 @@ export function startShaper(targetPort, link, host = "127.0.0.1") {
         /** bytes queued toward Chrome now */
         downQueuedBytes: down.queuedBytes,
         stop() {
+            stopped = true
             down.stop()
             up.stop()
             chromeSide.close()
             bridgeSide.close()
         },
     }
+}
+
+/**
+ * Answers a POST /offer through the bridge at `bridgeUrl` so ICE can only go through a new shaper on `link`: strips
+ * Chrome's candidates from the offer and replaces the bridge's with the shaper's port.
+ * @param {Request} request
+ * @param {string} bridgeUrl
+ * @param {{ down: Direction, up: Direction }} link
+ */
+export async function shapedOffer(request, bridgeUrl, link) {
+    const offer = await request.json()
+    offer.sdp = offer.sdp.split("\r\n").filter((line) => !line.startsWith("a=candidate")).join("\r\n")
+    const response = await fetch(`${bridgeUrl}/offer`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(offer) })
+    if (!response.ok) {
+        throw new Error(`bridge /offer: ${response.status} ${await response.text()}`)
+    }
+    const answer = await response.json()
+    const lines = answer.sdp.split("\r\n")
+    const loopback = lines.find((line) => line.startsWith("a=candidate") && line.includes(" 127.0.0.1 "))
+    if (!loopback) {
+        throw new Error(`the bridge's answer has no 127.0.0.1 candidate to shape:\n${answer.sdp}`)
+    }
+    const shaper = startShaper(Number(loopback.split(" ")[5]), link)
+    let replaced = false
+    answer.sdp = lines.flatMap((line) => {
+        if (!line.startsWith("a=candidate")) {
+            return [line]
+        }
+        if (replaced) {
+            return []
+        }
+        replaced = true
+        return [`a=candidate:1 1 udp 2130706431 127.0.0.1 ${shaper.port} typ host`]
+    }).join("\r\n")
+    return { answer: Response.json(answer), shaper }
 }
 
 /**
@@ -167,26 +214,9 @@ export function startShapedLink(bridgeUrl, link) {
         if (url.pathname !== "/offer") {
             return fetch(`${bridgeUrl}${url.pathname}${url.search}`)
         }
-        const offer = await request.json()
-        offer.sdp = offer.sdp.split("\r\n").filter((line) => !line.startsWith("a=candidate")).join("\r\n")
-        const response = await fetch(`${bridgeUrl}/offer`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(offer) })
-        const answer = await response.json()
-        const lines = answer.sdp.split("\r\n")
-        const loopback = lines.find((line) => line.startsWith("a=candidate") && line.includes(" 127.0.0.1 "))
-        const shaper = startShaper(Number(loopback?.split(" ")[5]), link)
+        const { answer, shaper } = await shapedOffer(request, bridgeUrl, link)
         shapers.push(shaper)
-        let replaced = false
-        answer.sdp = lines.flatMap((line) => {
-            if (!line.startsWith("a=candidate")) {
-                return [line]
-            }
-            if (replaced) {
-                return []
-            }
-            replaced = true
-            return [`a=candidate:1 1 udp 2130706431 127.0.0.1 ${shaper.port} typ host`]
-        }).join("\r\n")
-        return Response.json(answer)
+        return answer
     })
     return { url: `http://127.0.0.1:${port}`, shapers }
 }

@@ -1,12 +1,11 @@
 #!/usr/bin/env -S deno run --allow-all --unstable-net
-// Latency of a strict-priority stream under bulk load, over a real bottleneck: a userspace UDP
-// shaper sits between Chrome and the bridge (2 MB/s bridge->browser, 1 MB drop-tail queue, 5 ms
-// each way). A signaling proxy rewrites SDP so ICE can only go through the shaper: it strips
-// Chrome's candidates from the offer and replaces the bridge's with the shaper's port.
+// Latency of a strict-priority stream under bulk load, over a real bottleneck: test/shaped_link.js
+// between Chrome and the bridge (2 MB/s bridge->browser, 1 MB drop-tail queue, 5 ms each way).
 // Usage: deno run --allow-all --unstable-net test/latency.js
 
 import { $ } from "https://esm.sh/dax-sh@0.42.0"
-import { buildAll, check, finish, freePort, launchBrowser, machineLoad, startBridge, startPeer } from "./harness.js"
+import { buildAll, check, finish, launchBrowser, machineLoad, startBridge, startPeer } from "./harness.js"
+import { startShapedLink } from "./shaped_link.js"
 
 const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-gateway-latency-" }))
 console.log(`machine load at start: ${await machineLoad()}`)
@@ -16,104 +15,11 @@ const queueLimitBytes = 1_000_000
 const oneWayDelayMs = 5
 const bulkStreams = 5
 
-/** @type {{ downstreamBytes: number, dropped: number, maxQueueBytes: number, maxQueueMs: number }} */
-const shaperStats = { downstreamBytes: 0, dropped: 0, maxQueueBytes: 0, maxQueueMs: 0 }
+/** bridge->browser rate limited behind a drop-tail queue, a fixed delay both ways */
+const link = { down: { bytesPerSec: linkBytesPerSec, queueLimitBytes, oneWayDelayMs }, up: { oneWayDelayMs } }
 /** per wall-clock second: the shaper queue's peak, in ms of link time */
 const queuePeakBySecond = new Map()
-
-/**
- * One shaped path: Chrome <-> [chromeSide | bridgeSide] <-> bridge. Bridge->Chrome is rate limited
- * with a FIFO queue (real queueing delay); both directions get a fixed propagation delay.
- * @param {number} bridgePort
- */
-function startShaper(bridgePort) {
-    const chromeSide = Deno.listenDatagram({ transport: "udp", hostname: "127.0.0.1", port: 0 })
-    const bridgeSide = Deno.listenDatagram({ transport: "udp", hostname: "127.0.0.1", port: 0 })
-    const bridgeAddress = { transport: "udp", hostname: "127.0.0.1", port: bridgePort }
-    /** @type {Deno.NetAddr | null} */
-    let chromeAddress = null
-    /** @type {{ data: Uint8Array, eligibleAt: number }[]} */
-    const queue = []
-    let queuedBytes = 0
-    const later = (ms, action) => setTimeout(action, ms)
-    ;(async () => {
-        for await (const [data, address] of chromeSide) {
-            chromeAddress = /** @type {Deno.NetAddr} */ (address)
-            later(oneWayDelayMs, () => bridgeSide.send(data, bridgeAddress).catch(() => {}))
-        }
-    })()
-    ;(async () => {
-        for await (const [data] of bridgeSide) {
-            if (queuedBytes + data.length > queueLimitBytes) {
-                shaperStats.dropped++
-                continue
-            }
-            queue.push({ data, eligibleAt: performance.now() + oneWayDelayMs })
-            queuedBytes += data.length
-            shaperStats.maxQueueBytes = Math.max(shaperStats.maxQueueBytes, queuedBytes)
-            const queueMs = (queuedBytes / linkBytesPerSec) * 1000
-            shaperStats.maxQueueMs = Math.max(shaperStats.maxQueueMs, queueMs)
-            const second = Math.floor(Date.now() / 1000)
-            queuePeakBySecond.set(second, Math.max(queuePeakBySecond.get(second) ?? 0, queueMs))
-        }
-    })()
-    // token bucket drain at `linkBytesPerSec`; tokens accumulate up to 5 ms of link time, since
-    // timers fire every 1-4 ms and a one-packet bucket would cap the link at a packet per tick
-    const bucketDepth = Math.max(1500, linkBytesPerSec * 0.005)
-    ;(async () => {
-        let tokens = 0
-        let last = performance.now()
-        while (true) {
-            await new Promise((resolve) => setTimeout(resolve, 1))
-            const now = performance.now()
-            tokens = Math.min(tokens + ((now - last) / 1000) * linkBytesPerSec, bucketDepth)
-            last = now
-            while (queue.length > 0 && queue[0].eligibleAt <= now && tokens >= queue[0].data.length && chromeAddress) {
-                const packet = /** @type {{ data: Uint8Array }} */ (queue.shift())
-                queuedBytes -= packet.data.length
-                tokens -= packet.data.length
-                shaperStats.downstreamBytes += packet.data.length
-                chromeSide.send(packet.data, chromeAddress).catch(() => {})
-            }
-        }
-    })()
-    return /** @type {Deno.NetAddr} */ (chromeSide.addr).port
-}
-
-/**
- * Serves the page and signaling for the bridge at `bridgeUrl`, routing ICE through a shaper.
- * @param {string} bridgeUrl
- */
-function startSignalingProxy(bridgeUrl) {
-    const port = freePort()
-    Deno.serve({ hostname: "127.0.0.1", port, onListen() {} }, async (request) => {
-        const url = new URL(request.url)
-        if (url.pathname !== "/offer") {
-            return fetch(`${bridgeUrl}${url.pathname}${url.search}`)
-        }
-        const offer = await request.json()
-        offer.sdp = offer.sdp.split("\r\n").filter((line) => !line.startsWith("a=candidate")).join("\r\n")
-        const response = await fetch(`${bridgeUrl}/offer`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(offer) })
-        const answer = await response.json()
-        const lines = answer.sdp.split("\r\n")
-        const loopback = lines.find((line) => line.startsWith("a=candidate") && line.includes(" 127.0.0.1 "))
-        const bridgePort = Number(loopback?.split(" ")[5])
-        const shaperPort = startShaper(bridgePort)
-        let replaced = false
-        answer.sdp = lines.flatMap((line) => {
-            if (!line.startsWith("a=candidate")) {
-                return [line]
-            }
-            if (replaced) {
-                return []
-            }
-            replaced = true
-            return [`a=candidate:1 1 udp 2130706431 127.0.0.1 ${shaperPort} typ host`]
-        }).join("\r\n")
-        return Response.json(answer)
-    })
-    return `http://127.0.0.1:${port}`
-}
+let maxQueueMs = 0
 
 try {
     const webRoot = await buildAll(scratch)
@@ -123,7 +29,17 @@ try {
         ...Array.from({ length: bulkStreams }, (_, index) => ["--synthetic", `latency/bulk/${index}=200000@10`]).flat(),
     ])
     const bridge = await startBridge(scratch, peer.zenohPort, webRoot)
-    const proxyUrl = startSignalingProxy(bridge.url)
+    const shaped = startShapedLink(bridge.url, link)
+    const proxyUrl = shaped.url
+    // each second's peak: read the shaper's running maximum, then restart it
+    setInterval(() => {
+        for (const shaper of shaped.shapers) {
+            const second = Math.floor(Date.now() / 1000) - 1
+            queuePeakBySecond.set(second, Math.max(queuePeakBySecond.get(second) ?? 0, shaper.down.maxQueueMs))
+            maxQueueMs = Math.max(maxQueueMs, shaper.down.maxQueueMs)
+            shaper.down.maxQueueMs = 0
+        }
+    }, 1000)
     await $.sleep(1000)
     const browser = await launchBrowser()
     const page = await browser.newPage(`${proxyUrl}/test/blank.html`)
@@ -147,7 +63,7 @@ try {
             })
             const timeline = []
             const sampler = setInterval(async () => {
-                await client.pollStats().catch(() => {})
+                await client.pollStats().catch((error) => console.warn(`pollStats: ${error}`))
                 const bandwidth = client.gatewayStats?.bandwidth
                 timeline.push({ second: Math.floor(Date.now() / 1000), estimate: Math.round(bandwidth?.dataEstimateBytesPerSec ?? 0), budget: Math.round(bandwidth?.budgetBytesPerSec ?? 0), queueDelayMs: bandwidth?.queueDelayMs, delayEvents: bandwidth?.delayEvents })
             }, 1000)
@@ -193,13 +109,14 @@ try {
         delete results[phase].timeline
         delete results[phase].worstBySecond
     }
-    console.log(JSON.stringify({ ...results, shaper: shaperStats }, null, 1))
+    const shaper = shaped.shapers.at(-1)
+    console.log(JSON.stringify({ ...results, shaper: { downstreamBytes: shaper?.down.bytes, dropped: shaper?.down.dropped, maxQueueBytes: shaper?.down.maxQueueBytes, maxQueueMs } }, null, 1))
     const { alone, loaded, notStrict } = results
     const increase = loaded.p99 - alone.p99
     check(alone.count > 400 && loaded.count > 400, `important stream delivers through the shaper (${alone.count} alone, ${loaded.count} loaded, 50 Hz x 10 s)`)
     check(results.bulkBytesPerSec > linkBytesPerSec * 0.3, `bulk streams really load the link (${(results.bulkBytesPerSec / 1e6).toFixed(2)} MB/s of ${linkBytesPerSec / 1e6} MB/s)`)
     check(increase < 20, `strict-priority p99 latency grows < 20 ms under ${bulkStreams} bulk streams: alone p50 ${alone.p50} / p99 ${alone.p99} / max ${alone.max} ms, loaded p50 ${loaded.p50} / p99 ${loaded.p99} / max ${loaded.max} ms (+${increase} ms)`)
-    console.log(`contrast (not asserted): same stream without strict priority under load: p50 ${notStrict.p50} / p99 ${notStrict.p99} / max ${notStrict.max} ms; shaper queue peaked at ${shaperStats.maxQueueMs.toFixed(0)} ms (${shaperStats.maxQueueBytes} bytes), dropped ${shaperStats.dropped} packets`)
+    console.log(`contrast (not asserted): same stream without strict priority under load: p50 ${notStrict.p50} / p99 ${notStrict.p99} / max ${notStrict.max} ms; shaper queue peaked at ${maxQueueMs.toFixed(0)} ms (${shaper?.down.maxQueueBytes} bytes), dropped ${shaper?.down.dropped} packets`)
 } catch (error) {
     check(false, String(error))
     console.error(error)
