@@ -147,7 +147,8 @@ try {
                 errors: [...document.querySelectorAll(".stream-error")].map((element) => element.textContent).filter(Boolean),
             }
             const rawHz = parseFloat(result.raw)
-            if (result.videoWidth > 0 && result.video.mean > 20 && result.points?.litPixels > 500 && result.depth?.litPixels > 1000 && rawHz > 0) {
+            // depth starts thinned while the link estimate ramps up from its first guess: wait for the full-size image
+            if (result.videoWidth > 0 && result.video.mean > 20 && result.points?.litPixels > 500 && result.depth?.litPixels > 1000 && result.depthSize === "320x240" && rawHz > 0) {
                 break
             }
             await sleep(500)
