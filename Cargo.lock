@@ -5414,9 +5414,9 @@ dependencies = [
 
 [[package]]
 name = "zenoh-gateway"
-version = "0.5.33"
+version = "0.5.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36813664ce80e9566fdea40040441a014b62324f47d89bea44147c699ba232bc"
+checksum = "4ad62e109f87d248354e4111b88279422758a3e89c8ed58d436d5a110549e98c"
 dependencies = [
  "anyhow",
  "async-trait",

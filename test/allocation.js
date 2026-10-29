@@ -137,8 +137,9 @@ try {
     }
     console.log(JSON.stringify(tradeoffs, null, 1))
     const [keepQuality, keepHz] = tradeoffs
-    check(keepQuality.videoWidth === 320 && keepQuality.widths.join() === "320" && keepQuality.hz < 12 && keepQuality.hz > 4,
-        `tradeoff 0 keeps quality, Hz drops (${keepQuality.videoWidth}px wide, ${keepQuality.hz.toFixed(1)} Hz sent, ${keepQuality.decodedHz.toFixed(1)} Hz decoded, quality ${keepQuality.quality?.toFixed(2)})`)
+    // Hz held to the allocation's (10% for measuring over 5 s), well under the source's 20
+    check(keepQuality.videoWidth === 320 && keepQuality.widths.join() === "320" && keepQuality.hz <= keepQuality.allocation.hz * 1.1 && keepQuality.hz < 16 && keepQuality.hz > 4,
+        `tradeoff 0 keeps quality, Hz drops (${keepQuality.videoWidth}px wide, ${keepQuality.hz.toFixed(1)} Hz sent of ${keepQuality.allocation?.hz.toFixed(1)} allocated, ${keepQuality.decodedHz.toFixed(1)} Hz decoded, quality ${keepQuality.quality?.toFixed(2)})`)
     // fewer bits per frame (a still fixture's frames are tiny either way, so the frames' quality says it), at full size:
     // 0.06 bit/pixel is above the 0.05 floor where the picture would shrink
     check(keepHz.hz >= 16 && keepHz.quality < keepQuality.quality && keepHz.widths.join() === "320",

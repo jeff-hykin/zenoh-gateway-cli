@@ -17774,9 +17774,9 @@ rec {
       };
       "zenoh-gateway" = rec {
         crateName = "zenoh-gateway";
-        version = "0.5.33";
+        version = "0.5.34";
         edition = "2024";
-        sha256 = "1g1jladnjz0l8km9pn279wr64jq139240054vrpmdsc0rrj3d09n";
+        sha256 = "1379942i2nkd8f6xb3lwx2imh9s2g61bh4a19qslill7kw82xmja";
         libName = "zenoh_gateway";
         dependencies = [
           {
