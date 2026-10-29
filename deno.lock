@@ -18,6 +18,7 @@
     "jsr:@std/io@0.225.0": "0.225.0",
     "jsr:@std/path@1": "1.1.6",
     "jsr:@std/path@^1.0.8": "1.1.6",
+    "jsr:@std/streams@1": "1.2.0",
     "jsr:@zip-js/zip-js@^2.7.52": "2.8.26",
     "npm:@types/node@*": "24.2.0"
   },
@@ -86,6 +87,9 @@
       "dependencies": [
         "jsr:@std/internal"
       ]
+    },
+    "@std/streams@1.2.0": {
+      "integrity": "256b934254778f2bf45f5713b934209ff29e9b4b7fd4ec095219966813758c5f"
     },
     "@zip-js/zip-js@2.8.26": {
       "integrity": "2b78bfa2c5d43766c9a487fc0274981d45732de41bb5b82433d29d235be67191"

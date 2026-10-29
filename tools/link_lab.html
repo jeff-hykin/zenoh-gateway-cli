@@ -86,7 +86,7 @@ label.check { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
             <div class="row"><span>wobble shape</span><select id="wobbleMode"><option value="sine">smooth (sine)</option><option value="random">jumps (random level each period)</option></select><span></span></div>
             <div class="row"><span>delay (one way)</span><input type="range" id="oneWayDelayMs" min="0" max="300" step="5"><output></output></div>
             <div class="row"><span>jitter</span><input type="range" id="jitterMs" min="0" max="400" step="5"><output></output></div>
-            <label class="check"><input type="checkbox" id="jitterStalls"> jitter in 200 ms steps (Wi-Fi-like) instead of per packet</label>
+            <label class="check"><input type="checkbox" id="jitterStalls"> jitter in <span id="stallPeriod"></span> ms steps (R1's Wi-Fi) instead of per packet</label>
             <div class="row"><span>spikes</span><input type="range" id="spikeChance" min="0" max="0.5" step="0.01"><output></output></div>
             <div class="row"><span>spike size</span><input type="range" id="spikeMs" min="0" max="1000" step="10"><output></output></div>
             <div class="row"><span>loss</span><input type="range" id="lossRate" min="0" max="0.1" step="0.001"><output></output></div>
@@ -108,6 +108,11 @@ label.check { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
                 <button class="danger" data-outage="stall" data-seconds="5">stall 5 s</button>
                 <button data-outage="stall" data-seconds="0">end now</button>
             </div>
+        </section>
+        <section class="panel">
+            <h2>Grading</h2>
+            <div class="legend-note">latency: ITU-T G.114's one-way delay bands (fine to 150 ms, unacceptable past 400 ms); global_map's: within its own period. rate: green at the asked Hz, amber at the gateway's grant. gap: one asked period plus the good band, or one granted period plus the bad band.</div>
+            <div id="grading"></div>
         </section>
     </div>
     <div class="stack" id="knobColumn">
@@ -140,9 +145,17 @@ label.check { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
 import uPlot from "https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.esm.js"
 
 const $ = (selector) => document.querySelector(selector)
-const post = (path, body) => fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((response) => response.json())
+const post = async (path, body) => {
+    const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+    if (!response.ok) {
+        throw new Error(`${path}: ${response.status} ${await response.text()}`)
+    }
+    return response.json()
+}
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-const record = (entry) => post("/lab/record", entry).catch(() => {})
+const record = (entry) => post("/lab/record", entry).catch((error) => console.warn(`not logged: ${error}`))
+// the page's sampling period: charts, scorecards, the log and the gateway's stats
+const TICK_MS = 500
 
 // ---------------------------------------------------------------- the link's knobs
 const MIN_BW = 6_250, MAX_BW = 12_500_000 // 50 kbit/s .. 100 Mbit/s
@@ -181,23 +194,6 @@ for (const name of Object.keys(formats)) {
     })
 }
 $("#wobbleMode").addEventListener("change", (event) => sendLink({ wobbleMode: event.target.value }))
-$("#jitterStalls").addEventListener("change", (event) => sendLink({ jitterPeriodMs: event.target.checked ? 200 : 0 }))
-const calm = { wobbleAmount: 0, jitterMs: 0, jitterPeriodMs: 0, spikeChance: 0, spikeMs: 0, lossRate: 0 }
-const presets = {
-    "wired 10 MB/s": { ...calm, bytesPerSec: 10_000_000, oneWayDelayMs: 2, queueLimitBytes: 500_000 },
-    "good Wi-Fi 3 MB/s": { ...calm, bytesPerSec: 3_000_000, oneWayDelayMs: 15, jitterMs: 20, queueLimitBytes: 500_000 },
-    "R1 Wi-Fi": { ...calm, bytesPerSec: 3_000_000, oneWayDelayMs: 5, jitterMs: 210, jitterPeriodMs: 200, queueLimitBytes: 500_000 },
-    "spiky": { ...calm, bytesPerSec: 3_000_000, oneWayDelayMs: 5, jitterMs: 20, jitterPeriodMs: 100, spikeChance: 0.1, spikeMs: 210, lossRate: 0.005, queueLimitBytes: 500_000 },
-    "cellular 1 MB/s": { ...calm, bytesPerSec: 1_000_000, oneWayDelayMs: 40, jitterMs: 30, wobbleAmount: 0.5, wobblePeriodSec: 3, wobbleMode: "random", lossRate: 0.01, queueLimitBytes: 1_000_000 },
-    "500 kbit/s": { ...calm, bytesPerSec: 62_500, oneWayDelayMs: 20, queueLimitBytes: 100_000 },
-    "100 kbit/s": { ...calm, bytesPerSec: 12_500, oneWayDelayMs: 20, queueLimitBytes: 50_000 },
-}
-for (const [name, preset] of Object.entries(presets)) {
-    const button = document.createElement("button")
-    button.textContent = name
-    button.onclick = async () => { await sendLink(preset); showLink() }
-    $("#presets").append(button)
-}
 for (const button of document.querySelectorAll("[data-outage]")) {
     button.onclick = () => post("/lab/outage", { kind: button.dataset.outage, seconds: Number(button.dataset.seconds) })
 }
@@ -229,6 +225,18 @@ function knobRow(label, spec, value, onInput) {
         onInput(v)
     })
     return row
+}
+// ITU-T G.114: one-way delay up to 150 ms is fine for interactive use, past 400 ms unacceptable
+const grading = { latencyGoodMs: 150, latencyBadMs: 400 }
+const gradingKnobs = {
+    latencyGoodMs: { label: "latency fine to", min: 10, max: 1000, step: 10, format: (v) => `${v} ms` },
+    latencyBadMs: { label: "latency bad past", min: 10, max: 2000, step: 10, format: (v) => `${v} ms` },
+}
+for (const [field, spec] of Object.entries(gradingKnobs)) {
+    $("#grading").append(knobRow(spec.label, spec, grading[field], (v) => {
+        grading[field] = v
+        record({ type: "knob", target: "grading", changes: { [field]: v } })
+    }))
 }
 for (const [name, stream] of Object.entries(streams)) {
     const card = document.createElement("section")
@@ -286,7 +294,7 @@ for (const [name, stream] of Object.entries(streams)) {
     stream.card = output
     // per window: latencies (ms), messages, bytes; the last arrival, for the longest gap
     stream.window = { latencies: [], count: 0, bytes: 0 }
-    stream.history = [] // {at, rate, worst, p50, gapMs}
+    stream.history = []
     stream.lastArrival = null
     stream.longestGap = 0
     $("#knobColumn").append(card)
@@ -303,7 +311,7 @@ window.RTCPeerConnection = class extends NativePeerConnection {
     }
 }
 const { connect } = await import("/client/zenoh_gateway.js")
-const client = await connect(location.origin, { heartbeatHz: 10, heartbeatMisses: 100, statsIntervalMs: 500 })
+const client = await connect(location.origin, { heartbeatHz: 10, heartbeatMisses: 100, statsIntervalMs: TICK_MS })
 $("#connection").textContent = "connected"
 
 function arrived(stream, latencyMs, bytes) {
@@ -361,7 +369,7 @@ function open(name) {
         stream.subscription = client.subscribe("lab/video", { encoding: "dimos_lcm_image", bandwidthPriority, qualityToHzTradeoff, maxHz, ...priority }, (message) => {
             if (message.mediaStream && video.srcObject !== message.mediaStream) {
                 video.srcObject = message.mediaStream
-                video.play().catch(() => {})
+                video.play().catch((error) => console.warn(`video did not start: ${error}`))
             }
         })
     } else if (name === "cmd_vel") {
@@ -379,6 +387,8 @@ for (const name of ["tf", "video", "global_map"]) {
 }
 // cmd_vel: a running schedule at the knob's rate
 let cmdSeq = 0
+let cmdPutFailures = 0
+let cmdPutError = ""
 ;(async () => {
     let due = performance.now()
     while (true) {
@@ -392,8 +402,10 @@ let cmdSeq = 0
         await new Promise((resolve) => setTimeout(resolve, Math.max(0, due - performance.now())))
         try {
             streams.cmd_vel.publisher?.put(JSON.stringify({ t: Date.now(), seq: cmdSeq++, linear: [0.5, 0, 0], angular: [0, 0, 0.1] }))
-        } catch {
-            // reconnecting
+        } catch (error) {
+            // shown on the cmd_vel card: while the client reconnects every put fails
+            cmdPutFailures++
+            cmdPutError = String(error)
         }
     }
 })()
@@ -402,14 +414,27 @@ let cmdSeq = 0
 const state = await fetch("/lab/state").then((response) => response.json())
 linkSettings = state.settings
 showLink()
+$("#stallPeriod").textContent = state.stallPeriodMs
+$("#jitterStalls").addEventListener("change", (event) => sendLink({ jitterPeriodMs: event.target.checked ? state.stallPeriodMs : 0 }))
+// presets from the lab server: test/shaped_link.js's links and Chrome DevTools' throttling profiles
+for (const [name, preset] of Object.entries(state.presets)) {
+    const button = document.createElement("button")
+    button.textContent = name
+    button.onclick = async () => { await sendLink(preset); showLink() }
+    $("#presets").append(button)
+}
 $("#logPath").textContent = `log: ${state.log}`
 for (const name of state.gateways) {
     $("#gateway").append(new Option(name, name, false, name === state.gateway))
 }
 $("#gateway").addEventListener("change", async (event) => {
     $("#connection").textContent = "switching gateway"
-    await post("/lab/gateway", { name: event.target.value })
-    $("#connection").textContent = "connected"
+    try {
+        await post("/lab/gateway", { name: event.target.value })
+        $("#connection").textContent = "connected"
+    } catch (error) {
+        $("#connection").textContent = `gateway switch failed: ${error.message}`
+    }
 })
 let lastLink = null
 const linkWindow = { delivered: [], queueMs: [] }
@@ -427,7 +452,7 @@ new EventSource("/lab/events").onmessage = (event) => {
 }
 
 // ---------------------------------------------------------------- charts
-const SPAN_S = 120, TICK_MS = 500
+const SPAN_S = 120
 const series = { t: [], set: [], effective: [], delivered: [], estimate: [], videoSent: [], queue: [], outage: [] }
 const latency = { tf: [], video: [], global_map: [], cmd_vel: [] }
 const rate = { tf: [], video: [], global_map: [], cmd_vel: [] }
@@ -472,9 +497,15 @@ addEventListener("resize", () => {
     }
 })
 
-const quantile = (values, q) => { if (!values.length) return null; const sorted = [...values].sort((a, b) => a - b); return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] }
-const grade = (value, good, bad) => value === null ? "" : value <= good ? "good" : value >= bad ? "bad" : "warn"
-const gradeUp = (value, good, bad) => value === null ? "" : value >= good ? "good" : value <= bad ? "bad" : "warn"
+const quantile = (values, q) => {
+    if (!values.length) {
+        return null
+    }
+    const sorted = [...values].sort((a, b) => a - b)
+    return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]
+}
+const grade = (value, good, bad) => value === null ? "" : value <= good ? "good" : value > bad ? "bad" : "warn"
+const periodMs = (hz) => 1000 / Math.max(hz, 0.1)
 const fmt = (value, unit = "") => value === null || value === undefined || Number.isNaN(value) ? "–" : `${Math.round(value)}${unit}`
 const started = performance.now()
 let lastRtp = null
@@ -521,24 +552,43 @@ setInterval(async () => {
         const p50 = quantile(all, 0.5), p95 = quantile(all, 0.95)
         const gap = Math.max(...stream.history.map((entry) => entry.gap))
         const throughput = stream.history.reduce((sum, entry) => sum + entry.bytes, 0) / seconds
-        stream.card.querySelector(".score").innerHTML = `
-            <div class="${gradeUp(percent, 90, 50)}"><b>${fmt(percent, "%")}</b><span>rate (${delivered.toFixed(1)} of ${sourceHz} Hz)</span></div>
-            <div class="${grade(p95, 100, 300)}"><b>${fmt(p95, " ms")}</b><span>latency p95 (p50 ${fmt(p50)})</span></div>
-            <div class="${grade(gap, 3000 / Math.max(sourceHz, 0.1), 1000 + 3000 / Math.max(sourceHz, 0.1))}"><b>${fmt(gap, " ms")}</b><span>longest gap</span></div>`
         const gatewayStats = stream.subscription?.gatewayStats
         const allocation = gatewayStats?.allocation
+        // graded against what was asked, and what the gateway granted when bandwidth is short (amber: as designed)
+        const grantedHz = allocation?.hz ? Math.min(Number(allocation.hz), sourceHz) : sourceHz
+        const oneMessage = 1 / seconds
+        const rateGrade = sourceHz <= 0 ? "" : delivered >= sourceHz - oneMessage ? "good" : delivered >= grantedHz - oneMessage ? "warn" : "bad"
+        const latencyGrade = name === "global_map" ? grade(p95, periodMs(sourceHz), periodMs(sourceHz)) : grade(p95, grading.latencyGoodMs, grading.latencyBadMs)
+        const gapGrade = grade(gap, periodMs(sourceHz) + grading.latencyGoodMs, periodMs(grantedHz) + grading.latencyBadMs)
+        stream.card.querySelector(".score").innerHTML = `
+            <div class="${rateGrade}"><b>${fmt(percent, "%")}</b><span>rate (${delivered.toFixed(1)} of ${sourceHz} Hz${grantedHz < sourceHz ? `, ${grantedHz.toFixed(1)} granted` : ""})</span></div>
+            <div class="${latencyGrade}"><b>${fmt(p95, " ms")}</b><span>latency p95 (p50 ${fmt(p50)})</span></div>
+            <div class="${gapGrade}"><b>${fmt(gap, " ms")}</b><span>longest gap</span></div>`
         const detail = []
-        if (throughput > 0) detail.push(`${formatRate(throughput)}`)
-        if (allocation) detail.push(`granted ${allocation.budgetBytesPerSec ? formatRate(allocation.budgetBytesPerSec) : "–"}${allocation.hz ? ` @ ${Number(allocation.hz).toFixed(1)} Hz` : ""}${allocation.quality !== undefined && allocation.quality !== null ? ` q ${Number(allocation.quality).toFixed(2)}` : ""}`)
-        if (gatewayStats?.stats?.droppedQueue) detail.push(`gateway dropped ${gatewayStats.stats.droppedQueue}`)
+        if (throughput > 0) {
+            detail.push(`${formatRate(throughput)}`)
+        }
+        if (allocation) {
+            detail.push(`granted ${allocation.budgetBytesPerSec ? formatRate(allocation.budgetBytesPerSec) : "–"}${allocation.hz ? ` @ ${Number(allocation.hz).toFixed(1)} Hz` : ""}${allocation.quality !== undefined && allocation.quality !== null ? ` q ${Number(allocation.quality).toFixed(2)}` : ""}`)
+        }
+        if (gatewayStats?.stats?.droppedQueue) {
+            detail.push(`gateway dropped ${gatewayStats.stats.droppedQueue}`)
+        }
+        if (name === "cmd_vel" && cmdPutFailures) {
+            detail.push(`${cmdPutFailures} puts failed (last: ${cmdPutError})`)
+        }
         stream.card.querySelector(".detail").textContent = detail.join(" · ")
         sample.streams[name] = { hz, sourceHz, worst, p50: quantile(latencies, 0.5), bytes, allocation, stats: gatewayStats?.stats }
     }
 
     // video, from Chrome's own counters
-    const report = await peers.at(-1)?.getStats().catch(() => null)
+    const report = await peers.at(-1)?.getStats().catch((error) => console.warn(`no WebRTC stats: ${error}`))
     let inbound = null
-    report?.forEach((stat) => { if (stat.type === "inbound-rtp" && stat.kind === "video" && (stat.packetsReceived ?? 0) > 0) inbound = stat })
+    report?.forEach((stat) => {
+        if (stat.type === "inbound-rtp" && stat.kind === "video" && (stat.packetsReceived ?? 0) > 0) {
+            inbound = stat
+        }
+    })
     if (inbound) {
         const seconds = lastRtp ? (inbound.timestamp - lastRtp.timestamp) / 1000 : 0
         const bitrate = lastRtp && seconds > 0 ? ((inbound.bytesReceived - lastRtp.bytesReceived) * 8) / seconds : null
@@ -550,9 +600,10 @@ setInterval(async () => {
         lastRtp = inbound
     }
 
-    // keep SPAN_S
     while (series.t.length && series.t[0] < t - SPAN_S) {
-        for (const list of [...Object.values(series), ...Object.values(latency), ...Object.values(rate)]) list.shift()
+        for (const list of [...Object.values(series), ...Object.values(latency), ...Object.values(rate)]) {
+            list.shift()
+        }
     }
     linkChart.setData([series.t, series.set, series.effective, series.delivered, series.estimate, series.videoSent])
     queueChart.setData([series.t, series.queue])

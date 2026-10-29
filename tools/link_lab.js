@@ -3,15 +3,16 @@
 // UDP link (tests' shaped_link.js, reshaped live) <-> zenoh-gateway <-> a fake robot (examples/lab_peer.rs) publishing
 // tf (reliable), video and a global map; the page publishes cmd_vel back. The page has the knobs: bandwidth, wobble,
 // jitter, loss, dropouts/stalls, each source's rate and size, each subscription's priority and quality preference.
-// Every second's numbers are appended to <scratch>/lab.jsonl, with each knob change, for comparing runs later.
+// Every 0.5 s's numbers are appended to <scratch>/lab.jsonl, with each knob change, for comparing runs later.
 //
 // Usage: deno run --allow-all --unstable-net tools/link_lab.js [--port 8787] [--gateway name=/path/to/zenoh-gateway ...] [--no-build]
 //   --gateway (repeatable) offers more gateway builds to switch between on the page (A/B); "built" is this checkout's.
 
 import { $ } from "https://esm.sh/dax-sh@0.42.0"
 import { parseArgs } from "jsr:@std/cli@1/parse-args"
-import { buildAll, cleanup, freePort, killOnCleanup, lineCollector, releaseDir, startBridge } from "../test/harness.js"
-import { startShaper } from "../test/shaped_link.js"
+import { TextLineStream } from "jsr:@std/streams@1/text-line-stream"
+import { buildAll, cleanup, freePort, killOnCleanup, releaseDir, startBridge } from "../test/harness.js"
+import { defaultQueueLimitBytes, links, shapedOffer } from "../test/shaped_link.js"
 
 const args = parseArgs(Deno.args, { string: ["port", "gateway"], boolean: ["build"], collect: ["gateway"], default: { port: "8787", build: true } })
 const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-gateway-link-lab-" }))
@@ -29,6 +30,9 @@ if (!args.build) {
 const gateways = { built: releaseDir.join("zenoh-gateway").toString() }
 for (const spec of /** @type {string[]} */ (args.gateway ?? [])) {
     const [name, path] = spec.split("=")
+    if (!name || !path) {
+        throw new Error(`--gateway ${spec}: expected name=/path/to/zenoh-gateway`)
+    }
     gateways[name] = path
 }
 
@@ -37,38 +41,34 @@ const zenohPort = freePort()
 const peerProcess = new Deno.Command(releaseDir.join("examples/lab_peer").toString(), { args: [`tcp/127.0.0.1:${zenohPort}`], stdin: "piped", stdout: "piped", stderr: "inherit" }).spawn()
 killOnCleanup(peerProcess)
 const peerInput = peerProcess.stdin.getWriter()
-const peerOutput = lineCollector(peerProcess.stdout, "lab_peer")
-await peerOutput.waitFor((line) => line === "READY", 15000)
 /** @type {{ sentAt: number, receivedAt: number, seq: number }[]} */
 let cmdVels = []
+const peerReady = Promise.withResolvers()
 ;(async () => {
-    // lineCollector keeps every line; read them as they come and trim
-    let seen = 0
-    while (true) {
-        await new Promise((resolve) => setTimeout(resolve, 20))
-        const lines = peerOutput.lines
-        for (; seen < lines.length; seen++) {
-            const match = lines[seen].match(/^CMDVEL (\S+) (.*)$/)
-            if (match) {
-                try {
-                    const payload = JSON.parse(match[2])
-                    cmdVels.push({ receivedAt: Number(match[1]), sentAt: payload.t, seq: payload.seq })
-                } catch {
-                    // not ours
-                }
+    for await (const line of peerProcess.stdout.pipeThrough(new TextDecoderStream()).pipeThrough(new TextLineStream())) {
+        const cmdVel = line.match(/^CMDVEL (\S+) (.*)$/)
+        if (line === "READY") {
+            peerReady.resolve(undefined)
+        } else if (cmdVel) {
+            try {
+                const payload = JSON.parse(cmdVel[2])
+                cmdVels.push({ receivedAt: Number(cmdVel[1]), sentAt: payload.t, seq: payload.seq })
+            } catch (error) {
+                console.warn(`lab_peer: cmd_vel that is not the page's JSON (${error}): ${cmdVel[2]}`)
             }
-        }
-        if (seen > 10_000) {
-            lines.splice(0, seen)
-            seen = 0
+        } else {
+            console.warn(`lab_peer: ${line}`)
         }
     }
-})()
+})().catch((error) => console.error(`lab_peer: reading its output: ${error}`))
+const peerTimeout = setTimeout(() => peerReady.reject(new Error("lab_peer: no READY within 15 s")), 15000)
+await peerReady.promise
+clearTimeout(peerTimeout)
 
 // the gateway (restarted to switch builds)
 let gatewayName = "built"
 let bridge = await startBridge(scratch, zenohPort, webRoot, [], gateways[gatewayName])
-/** @type {ReturnType<typeof startShaper>[]} */
+/** @type {Awaited<ReturnType<typeof shapedOffer>>["shaper"][]} */
 let shapers = []
 async function switchGateway(name) {
     if (!gateways[name]) {
@@ -82,19 +82,36 @@ async function switchGateway(name) {
     bridge = await startBridge(scratch, zenohPort, webRoot, [], gateways[name])
 }
 
-// the link: what the page asks for, and what the shapers are set to from it every tick
-const settings = {
-    bytesPerSec: 2_000_000,
-    upBytesPerSec: 1_000_000,
-    oneWayDelayMs: 10,
-    jitterMs: 0,
-    jitterPeriodMs: 0,
-    spikeChance: 0,
-    spikeMs: 0,
-    lossRate: 0,
-    queueLimitBytes: 500_000,
-    // bandwidth wobble: +-amount (0..1) of the bandwidth over periodSec, "sine" or "random" (a new level each period)
+/** A shaped_link.js link as the lab's knobs (the uplink's rate is its own knob, kept). */
+const presetSettings = ({ down }) => ({
+    bytesPerSec: down.bytesPerSec,
+    oneWayDelayMs: down.oneWayDelayMs ?? 0,
+    jitterMs: down.jitterMs ?? 0,
+    jitterPeriodMs: down.jitterPeriodMs ?? 0,
+    spikeChance: down.spikeChance ?? 0,
+    spikeMs: down.spikeMs ?? 0,
+    lossRate: down.lossRate ?? 0,
+    queueLimitBytes: down.queueLimitBytes ?? defaultQueueLimitBytes,
     wobbleAmount: 0,
+})
+// Chrome DevTools' throttling presets (devtools-frontend NetworkManager.ts, factors included): kbit/s down and up, RTT ms; no loss or jitter
+const devtools = (name, downKbit, upKbit, rttMs) => [name, { bytesPerSec: (downKbit * 1000) / 8, upBytesPerSec: (upKbit * 1000) / 8, oneWayDelayMs: rttMs / 2 }]
+/** @type {Record<string, object>} */
+const presets = {
+    ...Object.fromEntries(Object.entries(links).map(([name, link]) => [name, presetSettings(link)])),
+    ...Object.fromEntries([
+        devtools("DevTools Fast 4G", 9000 * 0.9, 1500 * 0.9, 60 * 2.75),
+        devtools("DevTools Slow 4G", 1600 * 0.9, 750 * 0.9, 150 * 3.75),
+        devtools("DevTools Slow 3G", 500 * 0.8, 500 * 0.8, 400 * 5),
+    ].map(([name, preset]) => [name, { ...presetSettings({ down: {} }), ...preset }])),
+}
+
+// the link: what the page asks for, and what the shapers are set to from it every tick; starts as shaped_link.js's jitter50
+const settings = {
+    ...presetSettings(links.jitter50),
+    // the uplink starts as fast as the downlink
+    upBytesPerSec: links.jitter50.down.bytesPerSec,
+    // bandwidth wobble: +-amount (0..1) of the bandwidth over periodSec, "sine" or "random" (a new level each period)
     wobblePeriodSec: 4,
     wobbleMode: "sine",
 }
@@ -121,11 +138,12 @@ function applySettings(now) {
     const shared = { oneWayDelayMs: settings.oneWayDelayMs, jitterMs: settings.jitterMs, jitterPeriodMs: settings.jitterPeriodMs, spikeChance: settings.spikeChance, spikeMs: settings.spikeMs, queueLimitBytes: settings.queueLimitBytes }
     // a dropout loses every packet; a stall delivers nothing but queues (until the queue overflows)
     const lossRate = out === "dropout" ? 1 : settings.lossRate
-    Object.assign(link.down, shared, { bytesPerSec: out === "stall" ? 0 : Math.max(1000, settings.bytesPerSec * factor), lossRate })
+    Object.assign(link.down, shared, { bytesPerSec: out === "stall" ? 0 : settings.bytesPerSec * factor, lossRate })
     Object.assign(link.up, shared, { bytesPerSec: out === "stall" ? 0 : settings.upBytesPerSec, lossRate })
     return { effectiveBytesPerSec: link.down.bytesPerSec, outage: out }
 }
 applySettings(Date.now())
+// often enough that a sine wobble moves in small steps (a 0.5 s period, the knob's shortest, gets 10 per period)
 setInterval(() => applySettings(Date.now()), 50)
 
 // what the link did each tick, for the page
@@ -154,7 +172,7 @@ setInterval(() => {
         upBytesPerSec: rate("upBytes"),
         droppedPerSec: rate("dropped"),
         lostPerSec: rate("lost"),
-        queueMs: effectiveBytesPerSec > 0 ? (totals.queued / Math.max(effectiveBytesPerSec, 1)) * 1000 : null,
+        queueMs: effectiveBytesPerSec > 0 ? (totals.queued / effectiveBytesPerSec) * 1000 : null,
         queuedBytes: totals.queued,
         cmdVel: cmdVels,
     }
@@ -164,35 +182,13 @@ setInterval(() => {
     for (const controller of listeners) {
         try {
             controller.enqueue(message)
-        } catch {
+        } catch (error) {
+            // a page that went away without cancelling its stream
+            console.warn(`lab events: dropping a listener: ${error}`)
             listeners.delete(controller)
         }
     }
 }, 250)
-
-/** Routes a new peer connection's ICE through its own shaper on `link` (as shaped_link.js's startShapedLink). */
-async function shapedOffer(request) {
-    const offer = await request.json()
-    offer.sdp = offer.sdp.split("\r\n").filter((line) => !line.startsWith("a=candidate")).join("\r\n")
-    const response = await fetch(`${bridge.url}/offer`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(offer) })
-    const answer = await response.json()
-    const lines = answer.sdp.split("\r\n")
-    const loopback = lines.find((line) => line.startsWith("a=candidate") && line.includes(" 127.0.0.1 "))
-    const shaper = startShaper(Number(loopback?.split(" ")[5]), link)
-    shapers.push(shaper)
-    let replaced = false
-    answer.sdp = lines.flatMap((line) => {
-        if (!line.startsWith("a=candidate")) {
-            return [line]
-        }
-        if (replaced) {
-            return []
-        }
-        replaced = true
-        return [`a=candidate:1 1 udp 2130706431 127.0.0.1 ${shaper.port} typ host`]
-    }).join("\r\n")
-    return Response.json(answer)
-}
 
 const page = $.path(import.meta.dirname ?? ".").join("link_lab.html")
 const port = Number(args.port)
@@ -203,10 +199,13 @@ Deno.serve({ hostname: "127.0.0.1", port, onListen() {} }, async (request) => {
             case "/":
                 // read each time: edit the page, reload
                 return new Response(page.readTextSync(), { headers: { "content-type": "text/html; charset=utf-8" } })
-            case "/offer":
-                return await shapedOffer(request)
+            case "/offer": {
+                const { answer, shaper } = await shapedOffer(request, bridge.url, link)
+                shapers.push(shaper)
+                return answer
+            }
             case "/lab/state":
-                return Response.json({ settings, gateways: Object.keys(gateways), gateway: gatewayName, log: logPath.toString() })
+                return Response.json({ settings, presets, stallPeriodMs: links.wifi.down.jitterPeriodMs, gateways: Object.keys(gateways), gateway: gatewayName, log: logPath.toString() })
             case "/lab/link": {
                 const changes = await request.json()
                 Object.assign(settings, changes)
@@ -232,7 +231,7 @@ Deno.serve({ hostname: "127.0.0.1", port, onListen() {} }, async (request) => {
                 return Response.json({ ok: true })
             }
             case "/lab/record": {
-                // the page's per-second numbers and its own knob changes
+                // the page's per-tick numbers and its own knob changes
                 record(await request.json())
                 return Response.json({ ok: true })
             }
@@ -253,6 +252,7 @@ Deno.serve({ hostname: "127.0.0.1", port, onListen() {} }, async (request) => {
         // everything else (the client, the gateway's own endpoints) is the gateway's
         return await fetch(`${bridge.url}${url.pathname}${url.search}`, { method: request.method, headers: request.headers, body: request.body })
     } catch (error) {
+        console.error(`link lab: ${request.method} ${url.pathname}: ${error}`)
         return new Response(String(error), { status: 500 })
     }
 })
