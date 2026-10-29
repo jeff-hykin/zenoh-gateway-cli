@@ -303,8 +303,9 @@ try {
         // regression: a put right after ready() must go out even when the bridge's `accepted`
         // overtakes the channel's own open, here on stream ids the bridge just closed (a rejected option)
         out.firstPuts = []
+        out.rejectedAccepted = 0
         for (let index = 0; index < 15; index++) {
-            await client.publisher("test/frombrowser/rejected", { latencyLimit: -1 }).ready().catch(() => {})
+            await client.publisher("test/frombrowser/rejected", { latencyLimit: -1 }).ready().then(() => out.rejectedAccepted++, () => {})
             await sleep(150)
             const fresh = client.publisher(`test/frombrowser/first${index}`, { delivery: "reliable" })
             await fresh.ready()
@@ -402,6 +403,7 @@ try {
     check(recvCount("denied", "must-not-arrive") === 0 && !peerOutput.lines.some((line) => line.startsWith("RECV test/frombrowser/denied")), "a denied put never reaches the zenoh subscriber")
     check(extra.allowedReady === "accepted" && recvCount("allowed", "allowed-arrives") === 1, `an allowed key still works under access_control (ready: ${extra.allowedReady}, received ${recvCount("allowed", "allowed-arrives")}x, peer lines for it: ${JSON.stringify(peerOutput.lines.filter((line) => line.includes("frombrowser/allowed")))})`)
     const firstPutsArrived = Array.from({ length: 15 }, (_, index) => recvCount(`first${index}`, `first-${index}`)).filter((count) => count === 1).length
+    check(extra.rejectedAccepted === 0, `a publisher with latencyLimit -1 is refused (${extra.rejectedAccepted}/15 accepted)`)
     check(firstPutsArrived === 15 && extra.firstPutsUnsent === 0, `a put right after ready() always reaches zenoh (${firstPutsArrived}/15 arrived, ${extra.firstPutsUnsent} left unsent in the browser)`)
     check(extra.plans.secret === 0 && extra.plans.open > 10, `a subscription access_control denies gets nothing, an allowed one does (${JSON.stringify(extra.plans)})`)
 
