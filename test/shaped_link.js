@@ -21,12 +21,13 @@ import { freePort } from "./harness.js"
 
 /**
  * One direction: packets queue FIFO (jitter delays a packet and everything behind it, it never
- * reorders), then leave at the rate limit.
+ * reorders), then leave at the rate limit. `options` is read live.
  * @param {Direction} options
  * @param {(data: Uint8Array) => void} deliver
  */
 function shapedDirection(options, deliver) {
-    const { bytesPerSec = Infinity, queueLimitBytes = 1_000_000, oneWayDelayMs = 0, jitterMs = 0, jitterPeriodMs = 0, spikeChance = 0, spikeMs = 0, lossRate = 0 } = options
+    // read on every packet, so a caller changing `options` reshapes the link live (tools/link_lab.js)
+    const option = (name, fallback) => options[name] ?? fallback
     /** @type {DirectionStats} */
     const stats = { packets: 0, bytes: 0, dropped: 0, lost: 0, maxQueueBytes: 0, maxQueueMs: 0, delays: [] }
     /** @type {{ data: Uint8Array, eligibleAt: number, arrived: number }[]} */
@@ -36,16 +37,18 @@ function shapedDirection(options, deliver) {
     let jitterLevel = 0
     let jitterDrawnAt = -Infinity
     const jitterNow = (now) => {
+        const jitterMs = option("jitterMs", 0)
+        const jitterPeriodMs = option("jitterPeriodMs", 0)
         if (!jitterPeriodMs) {
             return Math.random() * jitterMs
         }
         if (now - jitterDrawnAt >= jitterPeriodMs) {
             jitterDrawnAt = now
-            jitterLevel = Math.random() < spikeChance ? spikeMs * (0.5 + Math.random() / 2) : Math.random() * jitterMs
+            const spikeMs = option("spikeMs", 0)
+            jitterLevel = Math.random() < option("spikeChance", 0) ? spikeMs * (0.5 + Math.random() / 2) : Math.random() * jitterMs
         }
         return jitterLevel
     }
-    const bucketDepth = Number.isFinite(bytesPerSec) ? Math.max(1500, bytesPerSec * 0.005) : Infinity
     let tokens = 0
     let last = performance.now()
     let running = true
@@ -53,6 +56,8 @@ function shapedDirection(options, deliver) {
         while (running) {
             await new Promise((resolve) => setTimeout(resolve, 1))
             const now = performance.now()
+            const bytesPerSec = option("bytesPerSec", Infinity)
+            const bucketDepth = Number.isFinite(bytesPerSec) ? Math.max(1500, bytesPerSec * 0.005) : Infinity
             tokens = Math.min(tokens + ((now - last) / 1000) * bytesPerSec, bucketDepth)
             last = now
             while (queue.length > 0 && queue[0].eligibleAt <= now && tokens >= queue[0].data.length) {
@@ -72,25 +77,28 @@ function shapedDirection(options, deliver) {
     })()
     return {
         stats,
+        /** bytes waiting in the queue now */
+        queuedBytes: () => queuedBytes,
         stop() {
             running = false
         },
         /** @param {Uint8Array} data */
         push(data) {
             const now = performance.now()
-            if (Math.random() < lossRate) {
+            if (Math.random() < option("lossRate", 0)) {
                 stats.lost++
                 return
             }
-            if (queuedBytes + data.length > queueLimitBytes) {
+            if (queuedBytes + data.length > option("queueLimitBytes", 1_000_000)) {
                 stats.dropped++
                 return
             }
-            lastEligibleAt = Math.max(lastEligibleAt, now + oneWayDelayMs + jitterNow(now))
+            lastEligibleAt = Math.max(lastEligibleAt, now + option("oneWayDelayMs", 0) + jitterNow(now))
             queue.push({ data, eligibleAt: lastEligibleAt, arrived: now })
             queuedBytes += data.length
             stats.maxQueueBytes = Math.max(stats.maxQueueBytes, queuedBytes)
-            if (Number.isFinite(bytesPerSec)) {
+            const bytesPerSec = option("bytesPerSec", Infinity)
+            if (Number.isFinite(bytesPerSec) && bytesPerSec > 0) {
                 stats.maxQueueMs = Math.max(stats.maxQueueMs, (queuedBytes / bytesPerSec) * 1000)
             }
         },
@@ -133,6 +141,8 @@ export function startShaper(targetPort, link, host = "127.0.0.1") {
         port: /** @type {Deno.NetAddr} */ (chromeSide.addr).port,
         down: down.stats,
         up: up.stats,
+        /** bytes queued toward Chrome now */
+        downQueuedBytes: down.queuedBytes,
         stop() {
             down.stop()
             up.stop()

@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Link Lab</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.min.css">
+<style>
+:root {
+    --bg: #101214; --panel: #181b1f; --inner: #20242a; --line: #2c3138; --text: #e6e8eb; --muted: #8b939c;
+    --accent: #4da3ff; --good: #3ecf8e; --warn: #f5b942; --bad: #ff5d5d;
+    --tf: #4da3ff; --video: #f5b942; --map: #c77dff; --cmd: #3ecf8e;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+header { display: flex; gap: 16px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+header h1 { font-size: 16px; margin: 0; }
+header .muted { color: var(--muted); }
+main { display: grid; grid-template-columns: minmax(300px, 360px) minmax(300px, 380px) minmax(0, 1fr); gap: 12px; padding: 12px 16px; align-items: start; }
+@media (max-width: 1300px) { main { grid-template-columns: minmax(300px, 1fr) minmax(300px, 1fr); } .outputs { grid-column: 1 / -1; } }
+@media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+.column-title { font-size: 15px; font-weight: 700; margin: 0 2px 2px; letter-spacing: .04em; }
+.column-title small { font-weight: 400; color: var(--muted); letter-spacing: 0; }
+.panel.knobCard { border-left: 4px solid var(--stream); }
+.knobCard h3 { margin: 0 0 4px; font-size: 15px; }
+.knobCard h4 { margin: 10px 0 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.knobCard .row { grid-template-columns: 130px 1fr 92px; }
+.panel.outCard { border-top: 3px solid var(--stream); }
+.outCard .score b { font-size: 15px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+.panel h2 { font-size: 13px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.stack { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.big { font-size: 34px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.big small { font-size: 14px; color: var(--muted); font-weight: 400; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+#bandwidth { height: 28px; }
+.row { display: grid; grid-template-columns: 120px 1fr 72px; gap: 8px; align-items: center; margin: 4px 0; }
+.row output { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.buttons { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+button, select { background: var(--inner); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; font: inherit; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.danger { border-color: #5a2a2a; }
+button.danger:hover { border-color: var(--bad); }
+.status { display: inline-block; padding: 2px 8px; border-radius: 10px; background: var(--inner); }
+.status.out { background: var(--bad); color: #000; }
+.streams { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.stream h3 { margin: 0 0 6px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.stream h3 .dot { width: 10px; height: 10px; border-radius: 50%; }
+.score { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0; }
+.score div { background: var(--inner); border-radius: 6px; padding: 6px; }
+.score b { display: block; font-size: 16px; font-variant-numeric: tabular-nums; }
+.score span { color: var(--muted); font-size: 11px; }
+.score .good b { color: var(--good); } .score .warn b { color: var(--warn); } .score .bad b { color: var(--bad); }
+.detail { color: var(--muted); font-size: 11px; font-family: ui-monospace, monospace; word-break: break-all; }
+.videoBox { position: relative; background: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 4 / 3; max-height: 420px; }
+.videoBox video { width: 100%; height: 100%; object-fit: contain; }
+.videoBox .overlay { position: absolute; left: 8px; top: 8px; background: rgba(0,0,0,.6); padding: 4px 8px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+.top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+@media (max-width: 1200px) { .top { grid-template-columns: 1fr; } }
+.chart { width: 100%; }
+label.check { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
+.legend-note { color: var(--muted); font-size: 11px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<header>
+    <h1>Link Lab</h1>
+    <span>gateway <select id="gateway"></select></span>
+    <span id="connection" class="status">connecting</span>
+    <span id="outageStatus" class="status">link up</span>
+    <span class="muted" id="logPath"></span>
+</header>
+<main>
+    <div class="stack">
+        <div class="column-title">LINK <small>the network between robot and page</small></div>
+        <section class="panel">
+            <h2>Bandwidth (browser-bound)</h2>
+            <div class="big" id="bandwidthLabel"></div>
+            <input type="range" id="bandwidth" min="0" max="1000" step="1">
+            <div class="buttons" id="presets"></div>
+        </section>
+        <section class="panel">
+            <h2>Shakiness</h2>
+            <div class="row"><span>wobble</span><input type="range" id="wobbleAmount" min="0" max="0.9" step="0.05"><output></output></div>
+            <div class="row"><span>wobble period</span><input type="range" id="wobblePeriodSec" min="0.5" max="20" step="0.5"><output></output></div>
+            <div class="row"><span>wobble shape</span><select id="wobbleMode"><option value="sine">smooth (sine)</option><option value="random">jumps (random level each period)</option></select><span></span></div>
+            <div class="row"><span>delay (one way)</span><input type="range" id="oneWayDelayMs" min="0" max="300" step="5"><output></output></div>
+            <div class="row"><span>jitter</span><input type="range" id="jitterMs" min="0" max="400" step="5"><output></output></div>
+            <label class="check"><input type="checkbox" id="jitterStalls"> jitter in 200 ms steps (Wi-Fi-like) instead of per packet</label>
+            <div class="row"><span>spikes</span><input type="range" id="spikeChance" min="0" max="0.5" step="0.01"><output></output></div>
+            <div class="row"><span>spike size</span><input type="range" id="spikeMs" min="0" max="1000" step="10"><output></output></div>
+            <div class="row"><span>loss</span><input type="range" id="lossRate" min="0" max="0.1" step="0.001"><output></output></div>
+            <div class="row"><span>link buffer</span><input type="range" id="queueLimitBytes" min="20000" max="4000000" step="10000"><output></output></div>
+            <div class="row"><span>uplink</span><input type="range" id="upBytesPerSec" min="10000" max="5000000" step="10000"><output></output></div>
+        </section>
+        <section class="panel">
+            <h2>Outages</h2>
+            <div class="legend-note">dropout: every packet lost. stall: nothing delivered, packets queue (Wi-Fi freezing).</div>
+            <div class="buttons">
+                <button class="danger" data-outage="dropout" data-seconds="1">dropout 1 s</button>
+                <button class="danger" data-outage="dropout" data-seconds="3">dropout 3 s</button>
+                <button class="danger" data-outage="dropout" data-seconds="10">dropout 10 s</button>
+                <button class="danger" data-outage="dropout" data-seconds="40">dropout 40 s</button>
+            </div>
+            <div class="buttons">
+                <button class="danger" data-outage="stall" data-seconds="0.5">stall 0.5 s</button>
+                <button class="danger" data-outage="stall" data-seconds="2">stall 2 s</button>
+                <button class="danger" data-outage="stall" data-seconds="5">stall 5 s</button>
+                <button data-outage="stall" data-seconds="0">end now</button>
+            </div>
+        </section>
+    </div>
+    <div class="stack" id="knobColumn">
+        <div class="column-title">STREAMS <small>what the robot sends, what the page asks for</small></div>
+    </div>
+    <div class="stack outputs">
+        <div class="column-title">OUTPUTS <small>what actually arrives (last 10 s)</small></div>
+        <div class="streams" id="streams"></div>
+        <div class="top">
+            <section class="panel">
+                <h2>Video</h2>
+                <div class="videoBox"><video id="video" muted autoplay playsinline></video><div class="overlay" id="videoOverlay">waiting for video</div></div>
+            </section>
+            <section class="panel">
+                <h2>Link: set vs delivered vs gateway's estimate (MB/s)</h2>
+                <div class="chart" id="linkChart"></div>
+                <h2 style="margin-top:8px">Link buffer (ms queued at the bottleneck)</h2>
+                <div class="chart" id="queueChart"></div>
+            </section>
+        </div>
+        <section class="panel">
+            <h2>Latency per stream, worst in each 0.5 s (ms, log scale)</h2>
+            <div class="chart" id="latencyChart"></div>
+            <h2 style="margin-top:8px">Delivered rate, % of what the source sends</h2>
+            <div class="chart" id="rateChart"></div>
+        </section>
+    </div>
+</main>
+<script type="module">
+import uPlot from "https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.esm.js"
+
+const $ = (selector) => document.querySelector(selector)
+const post = (path, body) => fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((response) => response.json())
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+const record = (entry) => post("/lab/record", entry).catch(() => {})
+
+// ---------------------------------------------------------------- the link's knobs
+const MIN_BW = 6_250, MAX_BW = 12_500_000 // 50 kbit/s .. 100 Mbit/s
+const toBandwidth = (position) => MIN_BW * Math.pow(MAX_BW / MIN_BW, position / 1000)
+const toPosition = (bytesPerSec) => (1000 * Math.log(bytesPerSec / MIN_BW)) / Math.log(MAX_BW / MIN_BW)
+const formatRate = (bytesPerSec) => bytesPerSec >= 1e6 ? `${(bytesPerSec / 1e6).toFixed(2)} MB/s` : `${(bytesPerSec / 1e3).toFixed(0)} KB/s`
+const formatBits = (bytesPerSec) => { const bits = bytesPerSec * 8; return bits >= 1e6 ? `${(bits / 1e6).toFixed(1)} Mbit/s` : `${(bits / 1e3).toFixed(0)} kbit/s` }
+const formats = {
+    wobbleAmount: (v) => `±${Math.round(v * 100)}%`, wobblePeriodSec: (v) => `${v} s`, oneWayDelayMs: (v) => `${v} ms`, jitterMs: (v) => `${v} ms`,
+    spikeChance: (v) => `${Math.round(v * 100)}%`, spikeMs: (v) => `${v} ms`, lossRate: (v) => `${(v * 100).toFixed(1)}%`,
+    queueLimitBytes: (v) => `${(v / 1e3).toFixed(0)} KB`, upBytesPerSec: (v) => formatRate(v),
+}
+let linkSettings = {}
+const sendLink = (changes) => { Object.assign(linkSettings, changes); return post("/lab/link", changes) }
+function showLink() {
+    $("#bandwidth").value = toPosition(linkSettings.bytesPerSec)
+    $("#bandwidthLabel").innerHTML = `${formatRate(linkSettings.bytesPerSec)} <small>${formatBits(linkSettings.bytesPerSec)}</small>`
+    for (const name of Object.keys(formats)) {
+        const input = $(`#${name}`)
+        input.value = linkSettings[name]
+        input.nextElementSibling.textContent = formats[name](Number(linkSettings[name]))
+    }
+    $("#wobbleMode").value = linkSettings.wobbleMode
+    $("#jitterStalls").checked = linkSettings.jitterPeriodMs > 0
+}
+$("#bandwidth").addEventListener("input", (event) => {
+    const bytesPerSec = Math.round(toBandwidth(Number(event.target.value)))
+    sendLink({ bytesPerSec })
+    $("#bandwidthLabel").innerHTML = `${formatRate(bytesPerSec)} <small>${formatBits(bytesPerSec)}</small>`
+})
+for (const name of Object.keys(formats)) {
+    $(`#${name}`).addEventListener("input", (event) => {
+        const value = Number(event.target.value)
+        event.target.nextElementSibling.textContent = formats[name](value)
+        sendLink({ [name]: value })
+    })
+}
+$("#wobbleMode").addEventListener("change", (event) => sendLink({ wobbleMode: event.target.value }))
+$("#jitterStalls").addEventListener("change", (event) => sendLink({ jitterPeriodMs: event.target.checked ? 200 : 0 }))
+const calm = { wobbleAmount: 0, jitterMs: 0, jitterPeriodMs: 0, spikeChance: 0, spikeMs: 0, lossRate: 0 }
+const presets = {
+    "wired 10 MB/s": { ...calm, bytesPerSec: 10_000_000, oneWayDelayMs: 2, queueLimitBytes: 500_000 },
+    "good Wi-Fi 3 MB/s": { ...calm, bytesPerSec: 3_000_000, oneWayDelayMs: 15, jitterMs: 20, queueLimitBytes: 500_000 },
+    "R1 Wi-Fi": { ...calm, bytesPerSec: 3_000_000, oneWayDelayMs: 5, jitterMs: 210, jitterPeriodMs: 200, queueLimitBytes: 500_000 },
+    "spiky": { ...calm, bytesPerSec: 3_000_000, oneWayDelayMs: 5, jitterMs: 20, jitterPeriodMs: 100, spikeChance: 0.1, spikeMs: 210, lossRate: 0.005, queueLimitBytes: 500_000 },
+    "cellular 1 MB/s": { ...calm, bytesPerSec: 1_000_000, oneWayDelayMs: 40, jitterMs: 30, wobbleAmount: 0.5, wobblePeriodSec: 3, wobbleMode: "random", lossRate: 0.01, queueLimitBytes: 1_000_000 },
+    "500 kbit/s": { ...calm, bytesPerSec: 62_500, oneWayDelayMs: 20, queueLimitBytes: 100_000 },
+    "100 kbit/s": { ...calm, bytesPerSec: 12_500, oneWayDelayMs: 20, queueLimitBytes: 50_000 },
+}
+for (const [name, preset] of Object.entries(presets)) {
+    const button = document.createElement("button")
+    button.textContent = name
+    button.onclick = async () => { await sendLink(preset); showLink() }
+    $("#presets").append(button)
+}
+for (const button of document.querySelectorAll("[data-outage]")) {
+    button.onclick = () => post("/lab/outage", { kind: button.dataset.outage, seconds: Number(button.dataset.seconds) })
+}
+
+// ---------------------------------------------------------------- streams: what the source sends, what the page asks for
+const streams = {
+    tf: { color: css("--tf"), title: "tf (reliable)", source: { hz: 50, bytes: 400 }, sub: { bandwidthPriority: 1, strict: false } },
+    video: { color: css("--video"), title: "video", source: { hz: 30, width: 640, height: 480, complexity: 0.3 }, sub: { bandwidthPriority: 1, strict: false, qualityToHzTradeoff: 0.5, maxHz: 30 } },
+    global_map: { color: css("--map"), title: "global_map", source: { hz: 1, bytes: 300_000 }, sub: { bandwidthPriority: 1, strict: false } },
+    cmd_vel: { color: css("--cmd"), title: "cmd_vel (page → robot)", source: { hz: 20 }, sub: { strict: false } },
+}
+const sourceKnobs = {
+    hz: { label: "source rate (pressure)", min: 0, max: 120, step: 1, format: (v) => `${v} Hz` },
+    bytes: { label: "message size", min: 100, max: 4_000_000, step: 100, format: (v) => v >= 1e6 ? `${(v / 1e6).toFixed(2)} MB` : `${(v / 1e3).toFixed(1)} KB` },
+    complexity: { label: "scene detail (noise)", min: 0, max: 1, step: 0.05, format: (v) => `${Math.round(v * 100)}%` },
+}
+const subKnobs = {
+    bandwidthPriority: { label: "priority preference", min: 0, max: 5, step: 0.5, format: (v) => `${v}` },
+    qualityToHzTradeoff: { label: "quality ↔ smoothness", min: 0, max: 1, step: 0.05, format: (v) => v < 0.5 ? `keep quality ${(1 - v).toFixed(2)}` : `keep Hz ${v.toFixed(2)}` },
+    maxHz: { label: "max Hz asked", min: 1, max: 60, step: 1, format: (v) => `${v} Hz` },
+}
+function knobRow(label, spec, value, onInput) {
+    const row = document.createElement("div")
+    row.className = "row"
+    row.innerHTML = `<span>${label}</span><input type="range" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${value}"><output>${spec.format(value)}</output>`
+    row.querySelector("input").addEventListener("input", (event) => {
+        const v = Number(event.target.value)
+        row.querySelector("output").textContent = spec.format(v)
+        onInput(v)
+    })
+    return row
+}
+for (const [name, stream] of Object.entries(streams)) {
+    const card = document.createElement("section")
+    card.className = "panel knobCard"
+    card.style.setProperty("--stream", stream.color)
+    card.innerHTML = `<h3>${stream.title}</h3><h4>${name === "cmd_vel" ? "page sends" : "robot sends"}</h4><div class="source"></div><h4>${name === "cmd_vel" ? "priority" : "page asks for"}</h4><div class="knobs"></div>`
+    const output = document.createElement("section")
+    output.className = "panel stream outCard"
+    output.style.setProperty("--stream", stream.color)
+    output.innerHTML = `<h3><span class="dot" style="background:${stream.color}"></span>${stream.title}</h3><div class="score"></div><div class="detail"></div>`
+    const sourceBox = card.querySelector(".source")
+    const knobs = card.querySelector(".knobs")
+    for (const [field, value] of Object.entries(stream.source)) {
+        if (sourceKnobs[field]) {
+            sourceBox.append(knobRow(sourceKnobs[field].label, sourceKnobs[field], value, (v) => {
+                stream.source[field] = v
+                if (name !== "cmd_vel") {
+                    post("/lab/source", { stream: name, field, value: v })
+                } else {
+                    record({ type: "knob", target: "source/cmd_vel", changes: { hz: v } })
+                }
+            }))
+        }
+    }
+    if (name === "video") {
+        const row = document.createElement("div")
+        row.className = "row"
+        row.innerHTML = `<span>camera size</span><select><option>320x240</option><option selected>640x480</option><option>1280x720</option><option>1920x1080</option></select><span></span>`
+        row.querySelector("select").addEventListener("change", (event) => {
+            const [width, height] = event.target.value.split("x").map(Number)
+            Object.assign(stream.source, { width, height })
+            post("/lab/source", { stream: "video", field: "width", value: width })
+            post("/lab/source", { stream: "video", field: "height", value: height })
+        })
+        sourceBox.append(row)
+    }
+    for (const [field, value] of Object.entries(stream.sub)) {
+        if (subKnobs[field]) {
+            knobs.append(knobRow(subKnobs[field].label, subKnobs[field], value, (v) => {
+                stream.sub[field] = v
+                stream.subscription?.update({ [field]: v })
+                record({ type: "knob", target: `sub/${name}`, changes: { [field]: v } })
+            }))
+        }
+    }
+    const strict = document.createElement("label")
+    strict.className = "check"
+    strict.innerHTML = `<input type="checkbox"> strict priority (zenoh INTERACTIVE_HIGH: skips allocation and pacing)`
+    strict.querySelector("input").addEventListener("change", (event) => {
+        stream.sub.strict = event.target.checked
+        record({ type: "knob", target: `sub/${name}`, changes: { strict: stream.sub.strict } })
+        open(name)
+    })
+    knobs.append(strict)
+    stream.card = output
+    // per window: latencies (ms), messages, bytes; the last arrival, for the longest gap
+    stream.window = { latencies: [], count: 0, bytes: 0 }
+    stream.history = [] // {at, rate, worst, p50, gapMs}
+    stream.lastArrival = null
+    stream.longestGap = 0
+    $("#knobColumn").append(card)
+    $("#streams").append(output)
+}
+
+// ---------------------------------------------------------------- the client
+const peers = []
+const NativePeerConnection = window.RTCPeerConnection
+window.RTCPeerConnection = class extends NativePeerConnection {
+    constructor(...rest) {
+        super(...rest)
+        peers.push(this)
+    }
+}
+const { connect } = await import("/client/zenoh_gateway.js")
+const client = await connect(location.origin, { heartbeatHz: 10, heartbeatMisses: 100, statsIntervalMs: 500 })
+$("#connection").textContent = "connected"
+
+function arrived(stream, latencyMs, bytes) {
+    const now = performance.now()
+    if (stream.lastArrival !== null) {
+        stream.longestGap = Math.max(stream.longestGap, now - stream.lastArrival)
+    }
+    stream.lastArrival = now
+    stream.window.latencies.push(latencyMs)
+    stream.window.count++
+    stream.window.bytes += bytes
+}
+const sentAt = (bytes) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getFloat64(0, true)
+
+// video: the send time is stamped into the picture's bottom rows
+const video = $("#video")
+const stampCanvas = new OffscreenCanvas(320, 1)
+const stampContext = stampCanvas.getContext("2d", { willReadFrequently: true })
+const readStamp = (width, height) => {
+    stampCanvas.width = width
+    // the 16-row stamp band of the source, scaled to what arrived
+    const y = Math.floor(height - 8 * (height / streams.video.source.height))
+    stampContext.drawImage(video, 0, y, width, 1, 0, 0, width, 1)
+    const row = stampContext.getImageData(0, 0, width, 1).data
+    let stamp = 0
+    for (let bit = 0; bit < 16; bit++) {
+        const x = Math.floor(((bit + 0.5) * width) / 16)
+        stamp = (stamp << 1) | (row[x * 4] > 127 ? 1 : 0)
+    }
+    return stamp
+}
+const ageOf = (stamp) => {
+    const wrapped = ((Math.round(Date.now()) - stamp) % 65536 + 65536) % 65536
+    return wrapped > 32768 ? wrapped - 65536 : wrapped
+}
+let videoSize = ""
+const onFrame = (_now, metadata) => {
+    videoSize = `${metadata.width}x${metadata.height}`
+    arrived(streams.video, ageOf(readStamp(metadata.width, metadata.height)), 0)
+    video.requestVideoFrameCallback(onFrame)
+}
+video.requestVideoFrameCallback(onFrame)
+
+function open(name) {
+    const stream = streams[name]
+    stream.subscription?.close()
+    stream.publisher?.close?.()
+    const priority = stream.sub.strict ? { priority: 2 } : {}
+    if (name === "tf") {
+        stream.subscription = client.subscribe("lab/tf", { delivery: "reliable", bandwidthPriority: stream.sub.bandwidthPriority, ...priority }, (message) => arrived(stream, Date.now() - sentAt(message.bytes), message.bytes.length))
+    } else if (name === "global_map") {
+        stream.subscription = client.subscribe("lab/global_map", { delivery: "latest", bandwidthPriority: stream.sub.bandwidthPriority, ...priority }, (message) => arrived(stream, Date.now() - sentAt(message.bytes), message.bytes.length))
+    } else if (name === "video") {
+        const { bandwidthPriority, qualityToHzTradeoff, maxHz } = stream.sub
+        stream.subscription = client.subscribe("lab/video", { encoding: "dimos_lcm_image", bandwidthPriority, qualityToHzTradeoff, maxHz, ...priority }, (message) => {
+            if (message.mediaStream && video.srcObject !== message.mediaStream) {
+                video.srcObject = message.mediaStream
+                video.play().catch(() => {})
+            }
+        })
+    } else if (name === "cmd_vel") {
+        stream.publisher = client.publisher("lab/cmd_vel", { delivery: "latest", ...priority })
+    }
+}
+for (const name of Object.keys(streams)) {
+    open(name)
+}
+// sync the robot to the page's defaults
+for (const name of ["tf", "video", "global_map"]) {
+    for (const [field, value] of Object.entries(streams[name].source)) {
+        post("/lab/source", { stream: name, field, value })
+    }
+}
+// cmd_vel: a running schedule at the knob's rate
+let cmdSeq = 0
+;(async () => {
+    let due = performance.now()
+    while (true) {
+        const hz = streams.cmd_vel.source.hz
+        if (hz <= 0) {
+            await new Promise((resolve) => setTimeout(resolve, 100))
+            due = performance.now()
+            continue
+        }
+        due += 1000 / hz
+        await new Promise((resolve) => setTimeout(resolve, Math.max(0, due - performance.now())))
+        try {
+            streams.cmd_vel.publisher?.put(JSON.stringify({ t: Date.now(), seq: cmdSeq++, linear: [0.5, 0, 0], angular: [0, 0, 0.1] }))
+        } catch {
+            // reconnecting
+        }
+    }
+})()
+
+// ---------------------------------------------------------------- the link, from the lab server
+const state = await fetch("/lab/state").then((response) => response.json())
+linkSettings = state.settings
+showLink()
+$("#logPath").textContent = `log: ${state.log}`
+for (const name of state.gateways) {
+    $("#gateway").append(new Option(name, name, false, name === state.gateway))
+}
+$("#gateway").addEventListener("change", async (event) => {
+    $("#connection").textContent = "switching gateway"
+    await post("/lab/gateway", { name: event.target.value })
+    $("#connection").textContent = "connected"
+})
+let lastLink = null
+const linkWindow = { delivered: [], queueMs: [] }
+new EventSource("/lab/events").onmessage = (event) => {
+    const tick = JSON.parse(event.data)
+    lastLink = tick
+    linkWindow.delivered.push(tick.deliveredBytesPerSec)
+    linkWindow.queueMs.push(tick.queueMs ?? 0)
+    for (const cmd of tick.cmdVel) {
+        arrived(streams.cmd_vel, cmd.receivedAt - cmd.sentAt, 0)
+    }
+    $("#gateway").value = tick.gateway
+    $("#outageStatus").textContent = tick.outage ? `${tick.outage}!` : "link up"
+    $("#outageStatus").className = `status${tick.outage ? " out" : ""}`
+}
+
+// ---------------------------------------------------------------- charts
+const SPAN_S = 120, TICK_MS = 500
+const series = { t: [], set: [], effective: [], delivered: [], estimate: [], videoSent: [], queue: [], outage: [] }
+const latency = { tf: [], video: [], global_map: [], cmd_vel: [] }
+const rate = { tf: [], video: [], global_map: [], cmd_vel: [] }
+const axisStyle = { stroke: css("--muted"), grid: { stroke: css("--line"), width: 1 }, ticks: { stroke: css("--line") } }
+const outageBands = {
+    hooks: { drawClear: [(u) => {
+        const { ctx } = u
+        ctx.save()
+        ctx.fillStyle = "rgba(255,93,93,0.15)"
+        for (let i = 0; i < series.t.length; i++) {
+            if (series.outage[i]) {
+                const x0 = u.valToPos(series.t[i] - TICK_MS / 2000, "x", true), x1 = u.valToPos(series.t[i] + TICK_MS / 2000, "x", true)
+                ctx.fillRect(x0, u.bbox.top, x1 - x0, u.bbox.height)
+            }
+        }
+        ctx.restore()
+    }] },
+}
+function makeChart(target, height, seriesSpec, scaleY = {}) {
+    const width = $(target).clientWidth || 600
+    return new uPlot({
+        width, height, plugins: [outageBands],
+        scales: { x: { time: false }, y: scaleY },
+        axes: [{ ...axisStyle, values: (u, values) => values.map((v) => `${Math.round(v - series.t.at(-1))}s`) }, axisStyle],
+        legend: { live: true },
+        series: [{}, ...seriesSpec.map((spec) => ({ width: 2, points: { show: false }, ...spec }))],
+    }, [[]], $(target))
+}
+const linkChart = makeChart("#linkChart", 180, [
+    { label: "set", stroke: css("--muted"), dash: [4, 4] },
+    { label: "after wobble", stroke: "#8b939c" },
+    { label: "delivered", stroke: css("--good") },
+    { label: "gateway estimate", stroke: css("--accent") },
+    { label: "video sent", stroke: css("--video") },
+], { range: (u, min, max) => [0, Math.max(0.1, max * 1.1)] })
+const queueChart = makeChart("#queueChart", 110, [{ label: "queued ms", stroke: css("--warn"), fill: "rgba(245,185,66,0.15)" }], { range: (u, min, max) => [0, Math.max(50, max * 1.1)] })
+const latencyChart = makeChart("#latencyChart", 200, Object.entries(streams).map(([name, stream]) => ({ label: name, stroke: stream.color })), { distr: 3, range: (u, min, max) => [Math.max(1, Math.min(min, 5)), Math.max(100, max * 1.3)] })
+const rateChart = makeChart("#rateChart", 160, Object.entries(streams).map(([name, stream]) => ({ label: name, stroke: stream.color })), { range: [0, 120] })
+addEventListener("resize", () => {
+    for (const [chart, target] of [[linkChart, "#linkChart"], [queueChart, "#queueChart"], [latencyChart, "#latencyChart"], [rateChart, "#rateChart"]]) {
+        chart.setSize({ width: $(target).clientWidth, height: chart.height })
+    }
+})
+
+const quantile = (values, q) => { if (!values.length) return null; const sorted = [...values].sort((a, b) => a - b); return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] }
+const grade = (value, good, bad) => value === null ? "" : value <= good ? "good" : value >= bad ? "bad" : "warn"
+const gradeUp = (value, good, bad) => value === null ? "" : value >= good ? "good" : value <= bad ? "bad" : "warn"
+const fmt = (value, unit = "") => value === null || value === undefined || Number.isNaN(value) ? "–" : `${Math.round(value)}${unit}`
+const started = performance.now()
+let lastRtp = null
+
+setInterval(async () => {
+    const now = performance.now()
+    const t = (now - started) / 1000
+    const bandwidth = client.gatewayStats?.bandwidth ?? {}
+    series.t.push(t)
+    series.set.push(linkSettings.bytesPerSec / 1e6)
+    series.effective.push(lastLink ? lastLink.effectiveBytesPerSec / 1e6 : null)
+    const delivered = linkWindow.delivered.length ? linkWindow.delivered.reduce((a, b) => a + b, 0) / linkWindow.delivered.length : null
+    series.delivered.push(delivered === null ? null : delivered / 1e6)
+    series.estimate.push(bandwidth.dataEstimateBytesPerSec ? bandwidth.dataEstimateBytesPerSec / 1e6 : null)
+    series.videoSent.push(bandwidth.videoSentBytesPerSec ? bandwidth.videoSentBytesPerSec / 1e6 : null)
+    series.queue.push(linkWindow.queueMs.length ? Math.max(...linkWindow.queueMs) : null)
+    series.outage.push(lastLink?.outage ? 1 : 0)
+    linkWindow.delivered = []
+    linkWindow.queueMs = []
+
+    const sample = { type: "sample", gateway: lastLink?.gateway, link: { ...linkSettings, effective: lastLink?.effectiveBytesPerSec, delivered, queueMs: series.queue.at(-1), outage: lastLink?.outage }, gatewayBandwidth: bandwidth, streams: {} }
+    for (const [name, stream] of Object.entries(streams)) {
+        const { latencies, count, bytes } = stream.window
+        // a stream silent for this whole window counts the silence as its latency so far
+        const silence = stream.lastArrival === null ? null : now - stream.lastArrival
+        const worst = latencies.length ? Math.max(...latencies) : silence
+        const hz = count / (TICK_MS / 1000)
+        const sourceHz = name === "video" ? Math.min(stream.source.hz, stream.sub.maxHz) : stream.source.hz
+        latency[name].push(worst === null ? null : Math.max(1, worst))
+        stream.history.push({ at: now, count, bytes, latencies, gap: stream.longestGap, sourceHz })
+        stream.history = stream.history.filter((entry) => now - entry.at <= 10_000)
+        // the rate over about 3 of the source's messages (1-10 s), so a 1 Hz map doesn't read 0% / 200% by turns
+        const rateWindowMs = Math.min(10_000, Math.max(1000, 3000 / Math.max(sourceHz, 0.1)))
+        const recent = stream.history.filter((entry) => now - entry.at < rateWindowMs)
+        const recentHz = recent.reduce((sum, entry) => sum + entry.count, 0) / ((recent.length * TICK_MS) / 1000)
+        rate[name].push(sourceHz > 0 ? Math.min(150, (100 * recentHz) / sourceHz) : null)
+        stream.window = { latencies: [], count: 0, bytes: 0 }
+        stream.longestGap = silence ?? 0
+        // scorecard over the last 10 s
+        const all = stream.history.flatMap((entry) => entry.latencies)
+        const seconds = (stream.history.length * TICK_MS) / 1000
+        const delivered = stream.history.reduce((sum, entry) => sum + entry.count, 0) / seconds
+        const percent = sourceHz > 0 ? (100 * delivered) / sourceHz : null
+        const p50 = quantile(all, 0.5), p95 = quantile(all, 0.95)
+        const gap = Math.max(...stream.history.map((entry) => entry.gap))
+        const throughput = stream.history.reduce((sum, entry) => sum + entry.bytes, 0) / seconds
+        stream.card.querySelector(".score").innerHTML = `
+            <div class="${gradeUp(percent, 90, 50)}"><b>${fmt(percent, "%")}</b><span>rate (${delivered.toFixed(1)} of ${sourceHz} Hz)</span></div>
+            <div class="${grade(p95, 100, 300)}"><b>${fmt(p95, " ms")}</b><span>latency p95 (p50 ${fmt(p50)})</span></div>
+            <div class="${grade(gap, 3000 / Math.max(sourceHz, 0.1), 1000 + 3000 / Math.max(sourceHz, 0.1))}"><b>${fmt(gap, " ms")}</b><span>longest gap</span></div>`
+        const gatewayStats = stream.subscription?.gatewayStats
+        const allocation = gatewayStats?.allocation
+        const detail = []
+        if (throughput > 0) detail.push(`${formatRate(throughput)}`)
+        if (allocation) detail.push(`granted ${allocation.budgetBytesPerSec ? formatRate(allocation.budgetBytesPerSec) : "–"}${allocation.hz ? ` @ ${Number(allocation.hz).toFixed(1)} Hz` : ""}${allocation.quality !== undefined && allocation.quality !== null ? ` q ${Number(allocation.quality).toFixed(2)}` : ""}`)
+        if (gatewayStats?.stats?.droppedQueue) detail.push(`gateway dropped ${gatewayStats.stats.droppedQueue}`)
+        stream.card.querySelector(".detail").textContent = detail.join(" · ")
+        sample.streams[name] = { hz, sourceHz, worst, p50: quantile(latencies, 0.5), bytes, allocation, stats: gatewayStats?.stats }
+    }
+
+    // video, from Chrome's own counters
+    const report = await peers.at(-1)?.getStats().catch(() => null)
+    let inbound = null
+    report?.forEach((stat) => { if (stat.type === "inbound-rtp" && stat.kind === "video" && (stat.packetsReceived ?? 0) > 0) inbound = stat })
+    if (inbound) {
+        const seconds = lastRtp ? (inbound.timestamp - lastRtp.timestamp) / 1000 : 0
+        const bitrate = lastRtp && seconds > 0 ? ((inbound.bytesReceived - lastRtp.bytesReceived) * 8) / seconds : null
+        const fps = lastRtp && seconds > 0 ? (inbound.framesDecoded - lastRtp.framesDecoded) / seconds : null
+        const videoStats = streams.video.subscription?.gatewayStats?.stats ?? {}
+        const vp95 = quantile(streams.video.history.flatMap((entry) => entry.latencies), 0.95)
+        $("#videoOverlay").textContent = `${videoSize} · ${fmt(fps)} fps · ${bitrate === null ? "–" : formatBits(bitrate / 8)} · latency p95 ${fmt(vp95, " ms")} · freezes ${inbound.freezeCount ?? 0} (${(inbound.totalFreezesDuration ?? 0).toFixed(1)} s)${videoStats.quality !== undefined ? ` · q ${Number(videoStats.quality).toFixed(2)}` : ""}`
+        sample.video = { size: videoSize, fps, bitrate, freezes: inbound.freezeCount, freezeSeconds: inbound.totalFreezesDuration, packetsLost: inbound.packetsLost }
+        lastRtp = inbound
+    }
+
+    // keep SPAN_S
+    while (series.t.length && series.t[0] < t - SPAN_S) {
+        for (const list of [...Object.values(series), ...Object.values(latency), ...Object.values(rate)]) list.shift()
+    }
+    linkChart.setData([series.t, series.set, series.effective, series.delivered, series.estimate, series.videoSent])
+    queueChart.setData([series.t, series.queue])
+    latencyChart.setData([series.t, ...Object.keys(streams).map((name) => latency[name])])
+    rateChart.setData([series.t, ...Object.keys(streams).map((name) => rate[name])])
+    record(sample)
+}, TICK_MS)
+</script>
+</body>
+</html>
