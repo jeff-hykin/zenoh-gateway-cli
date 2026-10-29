@@ -8,7 +8,6 @@ import { $ } from "https://esm.sh/dax-sh@0.42.0"
 
 export const repoRoot = $.path(import.meta.url).parentOrThrow().parentOrThrow()
 
-/** The checkout of each crate cargo builds (git dependency or local patch): zenoh-gateway's repo root, the codecs' crate. */
 /**
  * Checkouts of zenoh-gateway (its client and SPEC) and zenoh-dimos-codecs (its test fixtures): what cargo
  * builds against when that is a checkout (a path or git dependency); else ZENOH_GATEWAY_DIR /

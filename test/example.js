@@ -5,7 +5,7 @@
 // Usage: deno run --allow-all test/example.js   (UPDATE_SCREENSHOT=1 to refresh the README's test/artifacts/example.png)
 
 import { $ } from "https://esm.sh/dax-sh@0.42.0"
-import { bridgeDir, buildAll, check, finish, fixtureKey, fixturesDir, launchBrowser, loadManifest, machineLoad, repoRoot, startBridge, startPeer } from "./harness.js"
+import { buildAll, check, finish, fixtureKey, fixturesDir, launchBrowser, loadManifest, machineLoad, repoRoot, startBridge, startPeer } from "./harness.js"
 
 const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-gateway-example-" }))
 // the README screenshot is only rewritten on request, so a test run leaves the repo clean
@@ -30,7 +30,7 @@ const rawKey = "example/raw"
 
 try {
     $.logStep("building bridge + test peer (release)")
-    await $`cargo build --release --bin zenoh-gateway --example test_peer`.cwd(bridgeDir)
+    await $`cargo build --release --bin zenoh-gateway --example test_peer`.cwd(repoRoot)
     const peer = await startPeer([
         ...streams.flatMap((stream) => ["--publish", `${stream.key}=${fixturesDir.join(stream.file)}@10`]),
         "--synthetic", `${rawKey}=1500@20`,

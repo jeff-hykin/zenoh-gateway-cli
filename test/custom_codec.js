@@ -7,7 +7,7 @@
 // ZENOH_GATEWAY_CUSTOM_CODEC_BIN=<path> runs another build of the same program (e.g. a downstream crate's).
 
 import { $ } from "https://esm.sh/dax-sh@0.42.0"
-import { bridgeDir, buildAll, check, finish, launchBrowser, machineLoad, releaseDir, startBridge, startPeer } from "./harness.js"
+import { buildAll, check, finish, launchBrowser, machineLoad, releaseDir, repoRoot, startBridge, startPeer } from "./harness.js"
 
 const scratch = $.path(await Deno.makeTempDir({ prefix: "zenoh-gateway-custom-codec-" }))
 console.log(`machine load at start: ${await machineLoad()}`)

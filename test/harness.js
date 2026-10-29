@@ -5,10 +5,8 @@ import { launch } from "jsr:@astral/astral@0.5.6"
 import { buildWeb, crateRoots, repoRoot } from "../tools/build_web.js"
 
 export { repoRoot }
-/** where cargo builds the zenoh-gateway binary and the examples */
-export const bridgeDir = repoRoot
 /** cargo's release output (CARGO_TARGET_DIR when set) */
-export const releaseDir = $.path(Deno.env.get("CARGO_TARGET_DIR") ?? bridgeDir.join("target").toString()).join("release")
+export const releaseDir = $.path(Deno.env.get("CARGO_TARGET_DIR") ?? repoRoot.join("target").toString()).join("release")
 /** zenoh-dimos-codecs' fixtures, at the revision Cargo.lock pins */
 export const fixturesDir = (await crateRoots()).codecs.join("test/fixtures")
 
@@ -130,7 +128,7 @@ export function fixtureKey(entry) {
  */
 export async function buildAll(scratch, examples = []) {
     $.logStep(`building bridge + test peer${examples.map((example) => ` + ${example}`).join("")} (release)`)
-    await $`cargo build --release --bin zenoh-gateway --example test_peer ${examples.flatMap((example) => ["--example", example])}`.cwd(bridgeDir)
+    await $`cargo build --release --bin zenoh-gateway --example test_peer ${examples.flatMap((example) => ["--example", example])}`.cwd(repoRoot)
     $.logStep("building the web root")
     return await buildWeb(scratch.join("web").toString())
 }
@@ -193,7 +191,7 @@ export function killOnCleanup(child) {
 
 export async function cleanup() {
     for (const browser of browsers) {
-        await browser.close().catch(() => {})
+        await browser.close().catch((error) => console.warn(`closing Chrome: ${error}`))
     }
     for (const child of children) {
         try {
