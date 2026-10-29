@@ -71,7 +71,7 @@ try {
                 element.playsInline = true
                 element.srcObject = video.mediaStream
                 document.body.append(element)
-                await element.play().catch(() => {})
+                await element.play().catch((error) => console.warn(`play: ${error}`))
                 for (let index = 0; index < 4; index++) {
                     await Promise.race([new Promise((resolve) => element.requestVideoFrameCallback(resolve)), sleep(3000)])
                 }
@@ -113,7 +113,7 @@ try {
                 const element = document.createElement("audio")
                 element.srcObject = audio.mediaStream
                 document.body.append(element)
-                await element.play().catch(() => {})
+                await element.play().catch((error) => console.warn(`play: ${error}`))
                 const context = new AudioContext()
                 await context.resume()
                 const analyser = context.createAnalyser()

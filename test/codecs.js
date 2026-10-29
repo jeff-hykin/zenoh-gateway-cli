@@ -93,7 +93,7 @@ try {
             element.playsInline = true
             element.srcObject = subscription.mediaStream
             document.body.append(element)
-            await element.play().catch(() => {})
+            await element.play().catch((error) => console.warn(`play: ${error}`))
             // a few decoded frames, so the picture has settled after the keyframe
             for (let index = 0; index < 4; index++) {
                 await Promise.race([new Promise((resolve) => element.requestVideoFrameCallback(resolve)), sleep(3000)])
@@ -159,7 +159,7 @@ try {
         const client = await connect(bridgeUrl)
         const nextFrame = () => Promise.race([new Promise((resolve) => element.requestVideoFrameCallback(() => resolve(true))), sleep(3000).then(() => false)])
         const counted = () => { globalThis.switchTest.messages++ }
-        const play = () => Promise.race([element.play().catch(() => {}), sleep(3000)])
+        const play = () => Promise.race([element.play().catch((error) => console.warn(`play: ${error}`)), sleep(3000)])
         globalThis.switchTest = { client, element, nextFrame, play, counted, messages: 0, key, codec, subscription: client.subscribe(key, { encoding: codec, maxHz: 10 }, counted) }
         await globalThis.switchTest.subscription.ready()
     }, { args: [bridge.url, switchCase.key, switchCase.codec] })

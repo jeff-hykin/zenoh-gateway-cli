@@ -110,7 +110,7 @@ try {
             element.muted = true
             element.srcObject = subscription.mediaStream
             document.body.append(element)
-            await element.play().catch(() => {})
+            await element.play().catch((error) => console.warn(`play: ${error}`))
             await sleep(3000)
             measuring = true
             const decodedBefore = element.getVideoPlaybackQuality().totalVideoFrames

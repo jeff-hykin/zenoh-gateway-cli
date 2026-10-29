@@ -53,7 +53,7 @@ try {
                 // bytes first: a poll can wait on the control channel
                 const kBps = Math.round((bytes - lastBytes) / 1000)
                 lastBytes = bytes
-                client.pollStats().catch(() => {})
+                client.pollStats().catch((error) => console.warn(`pollStats: ${error}`))
                 const bandwidth = client.gatewayStats?.bandwidth
                 timeline.push({ kBps, estimate: Math.round((bandwidth?.dataEstimateBytesPerSec ?? 0) / 1000), queueDelayMs: Math.round(bandwidth?.queueDelayMs ?? 0), delayEvents: bandwidth?.delayEvents, windowKB: Math.round((subscription.gatewayStats?.stats?.windowBytes ?? 0) / 1000) })
             }, 1000)
