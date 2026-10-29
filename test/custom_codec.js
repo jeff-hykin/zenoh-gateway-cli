@@ -147,7 +147,8 @@ try {
         const raw = client._peer.createDataChannel(JSON.stringify({ type: "sub", key: "demo/text", id: 999999, opts: { encoding: "text-lowercase" } }))
         out.rawClosed = await new Promise((resolve) => {
             raw.onclose = () => resolve(true)
-            setTimeout(() => resolve(false), 5000)
+            // the gateway closes a refused channel after waiting 5 s for the client to
+            setTimeout(() => resolve(false), 8000)
         })
         window.client = client
         return out

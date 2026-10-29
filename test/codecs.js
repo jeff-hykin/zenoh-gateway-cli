@@ -368,8 +368,8 @@ try {
             `${label}: v${result.version}, ${result.count} points, worst axis error ${result.worstError.toExponential(2)} m <= documented bound ${result.maxError.toExponential(2)} m (${result.bytes} bytes decompressed for ${result.sourceCount} source points)`)
         const wantsIntensity = !result.file.includes("ros2/pointcloud_xyz.")
         check(result.hasIntensity === wantsIntensity && (result.intensityExact ?? true), `${label}: intensity ${result.hasIntensity ? (result.intensityExact ? "exact" : "WRONG") : "absent"} (expected ${wantsIntensity ? "present" : "absent"})`)
-        check(result.reduced.count < result.count && result.reduced.outside === 0 && result.reduced.keepEvery === 2 && result.reduced.count === Math.ceil(result.count / 2),
-            `${label}: maxQuality 0.5 sends half the points (${result.reduced.count}, 1 in ${result.reduced.keepEvery}), all within the source box + ${result.reduced.maxError.toExponential(2)}`)
+        check(result.reduced.count < result.count && result.reduced.outside === 0 && result.reduced.keepEvery === 2 && Math.abs(result.reduced.count - result.count / 2) <= result.count / 2 / 10,
+            `${label}: maxQuality 0.5 sends half the points within 10% (voxel thinning, codecs 0.3.5) (${result.reduced.count}, 1 in ${result.reduced.keepEvery}), all within the source box + ${result.reduced.maxError.toExponential(2)}`)
     }
 
     $.logStep("codec selection errors and shared encodes")

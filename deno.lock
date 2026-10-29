@@ -109,7 +109,7 @@
     "https://esm.sh/which@^4.0.0?target=denonext": "https://esm.sh/which@4.0.0?target=denonext"
   },
   "remote": {
-    "https://esm.sh/@deno/shim-deno-test@0.5.0/denonext/shim-deno-test.mjs": "7fb31bab908f36025bc5d5a1d47617e461d631f59190b0fa82c59c6686af0636",
+    "https://esm.sh/@deno/shim-deno-test@0.5.0/denonext/shim-deno-test.mjs": "21298ee12e8add3e8efe527aa1dd2a4fd029eb1876f5a59107bbe62b3969e282",
     "https://esm.sh/@deno/shim-deno-test@0.5.0?target=denonext": "503b73de1a14bd33782220e11fa2b33e9c87d574ac793e7addf1466c5436e66a",
     "https://esm.sh/@deno/shim-deno@0.19.2/denonext/shim-deno.mjs": "96204e9ac096cc28001ad4f675c9b2bbb2159fa0b7277c2fdc31e7c5bb5951dc",
     "https://esm.sh/@deno/shim-deno@0.19.2?target=denonext": "88880a98d7c45c5f0a6b87195ea7d5a9fc9aa8a006f5c5ace2edd24f5b4201b7",

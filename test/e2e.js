@@ -255,7 +255,8 @@ try {
 
     const reliable = results.reliable
     console.log(`reliable (contrast, not asserted beyond delivery): p50=${reliable.p50?.toFixed(1)}ms, early=${reliable.medianEarly?.toFixed(1)} late=${reliable.medianLate?.toFixed(1)} queued=${reliable.bridge?.queued} dropped=${reliable.dropped} gaps=${JSON.stringify(reliable.gaps)} streams=${["latest", "maxAge", "hzCapped", "reliable"].map((name) => results[name].channelId).join(",")}`)
-    check(reliable.received > 50 && reliable.dropped === 0, `reliable: arrives with no gaps (${reliable.received}, dropped ${reliable.dropped})`)
+    // the gateway bounds a reliable key's backlog (2 s, gateway 0.5.x): any gap must be one it counted as a backlog drop
+    check(reliable.received > 50 && reliable.dropped <= (reliable.bridge?.droppedQueue ?? 0), `reliable: arrives with no gaps beyond the gateway's backlog bound (${reliable.received}, dropped ${reliable.dropped}, gateway droppedQueue ${reliable.bridge?.droppedQueue})`)
     check(reliable.medianLate > 10 * Math.max(1, latest.medianLate), `contrast: reliable queues and grows latency where latest does not (${reliable.medianLate?.toFixed(0)} vs ${latest.medianLate?.toFixed(1)} ms)`)
 
     check(results.optionErrors.every((message) => message?.includes("rejected")), `the bridge rejects bad/unknown subscribe options (${results.optionErrors.map((m) => m?.split(":").slice(2).join(":").trim().slice(0, 50)).join(" | ")})`)
