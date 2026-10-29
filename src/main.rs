@@ -45,9 +45,12 @@ struct Cli {
     /// STUN/TURN server for both ends, e.g. stun:stun.l.google.com:19302 or turn:user:pass@relay.example:3478 (repeatable).
     #[arg(long)]
     ice_server: Vec<String>,
-    /// coturn's static-auth-secret: TURN servers without user:pass get credentials minted per connection (valid 24 h).
+    /// coturn's static-auth-secret: TURN servers without user:pass get credentials minted per connection.
     #[arg(long)]
     turn_secret: Option<String>,
+    /// How long --turn-secret credentials last, in seconds.
+    #[arg(long, default_value_t = 24 * 3600, requires = "turn_secret")]
+    turn_ttl: u64,
     /// Command that mints STUN/TURN servers for each end of each connection, added after --ice-server: run with sh -c,
     /// with ZENOH_GATEWAY_ICE_SIDE=browser|gateway and ZENOH_GATEWAY_ICE_TOKEN (the connection's token, if any); it prints
     /// {"iceServers": [...]} or [...] (RTCIceServer objects). On failure, or after 5 s, that end gets only --ice-server.
@@ -125,6 +128,7 @@ async fn watch_auth_file(path: PathBuf, tokens: Arc<RwLock<HashMap<String, Grant
     let modified = |path: &Path| std::fs::metadata(path).and_then(|meta| meta.modified()).ok();
     let mut last = modified(&path);
     loop {
+        // how soon an edit (a revocation) takes effect
         tokio::time::sleep(Duration::from_millis(500)).await;
         let now = modified(&path);
         if now == last {
@@ -192,9 +196,11 @@ async fn terminated() {
     let mut terminate = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
         Ok(terminate) => terminate,
         Err(error) => {
-            log::warn!("no SIGTERM handler: {error}");
-            let _ = tokio::signal::ctrl_c().await;
-            info!("SIGINT");
+            warn!("no SIGTERM handler: {error}");
+            match tokio::signal::ctrl_c().await {
+                Ok(()) => info!("SIGINT"),
+                Err(error) => warn!("no SIGINT handler either ({error}): shutting down now"),
+            }
             return;
         }
     };
@@ -235,7 +241,7 @@ async fn main() -> anyhow::Result<()> {
     }
     builder = builder.ice_servers(cli.ice_server.iter().map(|arg| ice_server(arg)));
     if let Some(secret) = cli.turn_secret {
-        builder = builder.turn_secret(secret, Duration::from_secs(24 * 3600));
+        builder = builder.turn_secret(secret, Duration::from_secs(cli.turn_ttl));
     }
     if let Some(command) = cli.ice_servers_command {
         let command = Arc::new(command);

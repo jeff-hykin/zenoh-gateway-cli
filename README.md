@@ -70,7 +70,8 @@ offline).
 | `--auth-file <file>` | none (anyone may do anything) | require a token: json5 map of tokens to grants, see [Auth](#auth) |
 | `--slowest-lease-heartbeat-allowed <secs>` | 60 | refuse a lease to a browser whose heartbeat deadline (`heartbeatMisses / heartbeatHz`) is longer: a frozen page keeps its leases that long |
 | `--ice-server <url>` | none | STUN/TURN for both ends, e.g. `stun:stun.l.google.com:19302`, `turn:user:pass@relay.example:3478`; repeatable |
-| `--turn-secret <secret>` | none | coturn's `static-auth-secret`: TURN servers without `user:pass@` get credentials minted per connection (valid 24 h) |
+| `--turn-secret <secret>` | none | coturn's `static-auth-secret`: TURN servers without `user:pass@` get credentials minted per connection |
+| `--turn-ttl <seconds>` | 86400 | how long `--turn-secret` credentials last |
 | `--ice-servers-command <cmd>` | none | mint STUN/TURN servers per connection, added after `--ice-server`: run with `sh -c`, env `ZENOH_GATEWAY_ICE_SIDE` (`browser`/`gateway`) and `ZENOH_GATEWAY_ICE_TOKEN`; prints `{"iceServers": [...]}` or `[...]`. On failure or after 5 s, only `--ice-server` |
 | `--cloudflare-turn-key-id <id>` | none | Cloudflare TURN: credentials minted through Cloudflare's API; the key's API token comes from `CLOUDFLARE_TURN_API_TOKEN` (an env var, so it stays out of `ps`) |
 | `--cloudflare-turn-ttl <seconds>` | 86400 | how long Cloudflare credentials last; the shared set is minted again after half of it |
