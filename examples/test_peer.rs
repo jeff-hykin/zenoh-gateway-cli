@@ -32,9 +32,11 @@
 //!
 //! Prints `READY` once everything is declared.
 
+mod common;
+
 use clap::Parser;
-use std::io::Write;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use common::{peer_config, print_line, report, stamp_image, stamped_payload};
+use std::time::{Duration, Instant};
 use zenoh::qos::CongestionControl;
 use zenoh_ext::{AdvancedPublisherBuilderExt, CacheConfig};
 
@@ -78,7 +80,7 @@ async fn publish_while_matched(session: &zenoh::Session, key: String, hz: f64, m
         loop {
             ticker.tick().await;
             if publisher.matching_status().await.is_ok_and(|status| status.matching()) {
-                let _ = publisher.put(make(counter)).await;
+                report(publisher.key_expr().as_str(), publisher.put(make(counter)).await);
                 counter = counter.wrapping_add(1);
             }
         }
@@ -94,35 +96,11 @@ fn big_payload(counter: u32, length: usize) -> Vec<u8> {
     payload
 }
 
-/// Paints `stamp` into the bottom 16 rows of the `width`-wide RGB image ending `image`.
-fn stamp_image(image: &mut [u8], width: usize, stamp: u16) {
-    let rows = 16;
-    let start = image.len() - width * rows * 3;
-    for row in 0..rows {
-        for x in 0..width {
-            let bit = 15 - (x * 16 / width);
-            let value = if (stamp >> bit) & 1 == 1 { 255 } else { 0 };
-            let at = start + (row * width + x) * 3;
-            image[at..at + 3].fill(value);
-        }
-    }
-}
-
-fn unix_ms() -> f64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs_f64() * 1000.0
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let mut config = zenoh::Config::default();
-    let insert = |config: &mut zenoh::Config, key: &str, value: &str| {
-        config.insert_json5(key, value).map_err(|e| anyhow::anyhow!("{key}: {e}"))
-    };
-    insert(&mut config, "mode", r#""peer""#)?;
-    insert(&mut config, "listen/endpoints", &serde_json::to_string(&[&cli.listen])?)?;
-    insert(&mut config, "scouting/multicast/enabled", "false")?;
-    insert(&mut config, "timestamping/enabled", "true")?;
+    let mut config = peer_config(&cli.listen)?;
+    config.insert_json5("timestamping/enabled", "true").map_err(|e| anyhow::anyhow!("timestamping/enabled: {e}"))?;
     let session = zenoh::open(config).await.map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let cached = session
@@ -139,7 +117,7 @@ async fn main() -> anyhow::Result<()> {
         .callback(|query| {
             let key = query.key_expr().clone();
             tokio::spawn(async move {
-                let _ = query.reply(key, "pong").await;
+                report("test/queryable reply", query.reply(key, "pong").await);
             });
         })
         .await
@@ -148,10 +126,7 @@ async fn main() -> anyhow::Result<()> {
     let _from_browser = session
         .declare_subscriber("test/frombrowser/**")
         .callback(|sample| {
-            let text = String::from_utf8_lossy(&sample.payload().to_bytes()).into_owned();
-            let mut stdout = std::io::stdout().lock();
-            let _ = writeln!(stdout, "RECV {} {}", sample.key_expr(), text);
-            let _ = stdout.flush();
+            print_line(&format!("RECV {} {}", sample.key_expr(), text(Some(sample.payload()))));
         })
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -166,8 +141,8 @@ async fn main() -> anyhow::Result<()> {
         let mut ticker = tokio::time::interval(Duration::from_millis(500));
         loop {
             ticker.tick().await;
-            let _ = declared.put("declared").await;
-            let _ = undeclared_session.put("test/unsubscribed/undeclared", "undeclared").await;
+            report("test/unsubscribed/declared", declared.put("declared").await);
+            report("test/unsubscribed/undeclared", undeclared_session.put("test/unsubscribed/undeclared", "undeclared").await);
         }
     });
 
@@ -179,7 +154,7 @@ async fn main() -> anyhow::Result<()> {
         loop {
             ticker.tick().await;
             if big_publisher.matching_status().await.is_ok_and(|status| status.matching()) {
-                let _ = big_publisher.put(big_payload(counter, big_bytes)).await;
+                report("test/big", big_publisher.put(big_payload(counter, big_bytes)).await);
                 counter = counter.wrapping_add(1);
             }
         }
@@ -192,14 +167,8 @@ async fn main() -> anyhow::Result<()> {
     }
     for spec in &cli.synthetic {
         let (key, size, hz) = split_spec(spec)?;
-        let size: usize = size.parse::<usize>()?.max(12);
-        publish_while_matched(&session, key, hz, move |counter| {
-            let mut payload = vec![0u8; size];
-            payload[0..8].copy_from_slice(&unix_ms().to_le_bytes());
-            payload[8..12].copy_from_slice(&counter.to_le_bytes());
-            payload
-        })
-        .await?;
+        let size: usize = size.parse()?;
+        publish_while_matched(&session, key, hz, move |counter| stamped_payload(size, counter)).await?;
     }
 
     for spec in &cli.stamped_image {
@@ -208,7 +177,7 @@ async fn main() -> anyhow::Result<()> {
         let (bytes, width) = (std::fs::read(path).map_err(|e| anyhow::anyhow!("{path}: {e}"))?, width.parse::<usize>()?);
         publish_while_matched(&session, key, hz, move |_| {
             let mut image = bytes.clone();
-            stamp_image(&mut image, width, unix_ms() as u64 as u16);
+            stamp_image(&mut image, width);
             image
         })
         .await?;
@@ -219,7 +188,7 @@ async fn main() -> anyhow::Result<()> {
         let mut ticker = tokio::time::interval(Duration::from_millis(200));
         loop {
             ticker.tick().await;
-            let _ = jpeg_publisher.put(JPEG).await;
+            report("test/jpeg", jpeg_publisher.put(JPEG).await);
         }
     });
 
@@ -228,8 +197,7 @@ async fn main() -> anyhow::Result<()> {
         .congestion_control(CongestionControl::Drop)
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    println!("READY");
-    std::io::stdout().flush()?;
+    print_line("READY");
 
     // Fixed-rate schedule; catch up in bursts rather than drift when the timer is late.
     let period = Duration::from_secs_f64(1.0 / cli.fast_hz);
@@ -241,18 +209,9 @@ async fn main() -> anyhow::Result<()> {
         if due > now {
             tokio::time::sleep(due - now).await;
         }
-        let mut payload = vec![0u8; cli.fast_bytes.max(12)];
-        payload[0..8].copy_from_slice(&unix_ms().to_le_bytes());
-        payload[8..12].copy_from_slice(&counter.to_le_bytes());
-        let _ = fast.put(payload).await;
+        report("test/fast", fast.put(stamped_payload(cli.fast_bytes, counter)).await);
         counter = counter.wrapping_add(1);
     }
-}
-
-fn print_line(line: String) {
-    let mut stdout = std::io::stdout().lock();
-    let _ = writeln!(stdout, "{line}");
-    let _ = stdout.flush();
 }
 
 fn text(bytes: Option<&zenoh::bytes::ZBytes>) -> String {
@@ -266,7 +225,7 @@ async fn declare_api_fixtures(session: &zenoh::Session) -> anyhow::Result<()> {
         .declare_subscriber("test/api/in/**")
         .callback(|sample| {
             let kind = if sample.kind() == zenoh::sample::SampleKind::Delete { "delete" } else { "put" };
-            print_line(format!("API {kind} {} {} enc={} att={}", sample.key_expr(), text(Some(sample.payload())), sample.encoding(), text(sample.attachment())));
+            print_line(&format!("API {kind} {} {} enc={} att={}", sample.key_expr(), text(Some(sample.payload())), sample.encoding(), text(sample.attachment())));
         })
         .await
         .map_err(error)?;
@@ -276,9 +235,9 @@ async fn declare_api_fixtures(session: &zenoh::Session) -> anyhow::Result<()> {
         .callback(|query| {
             tokio::spawn(async move {
                 let echo = format!("{}|{}|{}|{}", query.parameters(), text(query.payload()), query.encoding().map(|encoding| encoding.to_string()).unwrap_or_default(), text(query.attachment()));
-                let _ = query.reply("test/api/echo/x", echo).encoding("text/plain").attachment("reply-att").await;
-                let _ = query.reply_err("echo-err").await;
-                let _ = query.reply_del("test/api/echo/gone").await;
+                report("test/api/echo reply", query.reply("test/api/echo/x", echo).encoding("text/plain").attachment("reply-att").await);
+                report("test/api/echo reply_err", query.reply_err("echo-err").await);
+                report("test/api/echo reply_del", query.reply_del("test/api/echo/gone").await);
             });
         })
         .await
@@ -289,7 +248,7 @@ async fn declare_api_fixtures(session: &zenoh::Session) -> anyhow::Result<()> {
     let watcher = session
         .liveliness()
         .declare_subscriber("test/api/token/**")
-        .callback(|sample| print_line(format!("{} {}", if sample.kind() == zenoh::sample::SampleKind::Put { "ALIVE" } else { "GONE" }, sample.key_expr())))
+        .callback(|sample| print_line(&format!("{} {}", if sample.kind() == zenoh::sample::SampleKind::Put { "ALIVE" } else { "GONE" }, sample.key_expr())))
         .await
         .map_err(error)?;
     std::mem::forget(watcher);
@@ -306,7 +265,7 @@ async fn declare_api_fixtures(session: &zenoh::Session) -> anyhow::Result<()> {
                 });
             }
             if !seen.is_empty() {
-                print_line(format!("GOT {}", seen.join(";")));
+                print_line(&format!("GOT {}", seen.join(";")));
             }
         }
     });
@@ -315,8 +274,8 @@ async fn declare_api_fixtures(session: &zenoh::Session) -> anyhow::Result<()> {
         loop {
             tokio::time::sleep(Duration::from_millis(300)).await;
             if meta.matching_status().await.is_ok_and(|status| status.matching()) {
-                let _ = meta.put("meta-payload").encoding("application/json").attachment("peer-att").await;
-                let _ = meta.delete().await;
+                report("test/api/meta put", meta.put("meta-payload").encoding("application/json").attachment("peer-att").await);
+                report("test/api/meta delete", meta.delete().await);
             }
         }
     });

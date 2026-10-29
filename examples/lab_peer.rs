@@ -8,16 +8,19 @@
 //! - `lab/global_map`: `bytes` at `hz` (send time + counter + filler), congestion control Drop
 //! - `lab/cmd_vel` (from the page): printed as `CMDVEL <unix ms received> <payload>`
 //!
-//! stdin: `SET <tf|video|global_map> <hz|bytes|width|height|complexity> <number>`. Publishers only put while matched.
+//! stdin: `SET <tf|video|global_map> <hz|bytes|width|height|complexity> <number>`; a line it can't apply is printed back
+//! as `ERROR <line>`. Every stream starts off (hz 0): the page sends its own settings when it loads. Publishers only put
+//! while matched.
 
-use std::io::Write;
+mod common;
+
+use common::{peer_config, print_line, report, stamp_image, stamped_payload, unix_ms};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncBufReadExt;
 use zenoh::qos::CongestionControl;
 
-/// One stream's live settings.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct Settings {
     hz: f64,
     bytes: usize,
@@ -31,10 +34,6 @@ type Shared = Arc<Mutex<Settings>>;
 /// The dimos LCM `sensor_msgs.Image` fingerprint (from zenoh-dimos-codecs' image_rgb8 fixture).
 const IMAGE_FINGERPRINT: [u8; 8] = [0x53, 0x5c, 0xfa, 0xce, 0x1f, 0x4f, 0x57, 0x17];
 
-fn unix_ms() -> f64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs_f64() * 1000.0
-}
-
 fn lcm_string(out: &mut Vec<u8>, text: &str) {
     out.extend_from_slice(&(text.len() as i32 + 1).to_be_bytes());
     out.extend_from_slice(text.as_bytes());
@@ -43,7 +42,7 @@ fn lcm_string(out: &mut Vec<u8>, text: &str) {
 
 /// A dimos LCM Image message of `pixels` (rgb8, `width` x `height`).
 fn lcm_image(width: usize, height: usize, pixels: &[u8]) -> Vec<u8> {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("the clock is after 1970");
     let mut out = Vec::with_capacity(pixels.len() + 96);
     out.extend_from_slice(&IMAGE_FINGERPRINT);
     out.extend_from_slice(&(pixels.len() as i32).to_be_bytes());
@@ -60,7 +59,7 @@ fn lcm_image(width: usize, height: usize, pixels: &[u8]) -> Vec<u8> {
 }
 
 /// Frame `counter` of the test scene: a drifting gradient, two moving squares, noise of strength `complexity`, and the
-/// send-time stamp in the bottom 16 rows.
+/// send-time stamp.
 fn scene(width: usize, height: usize, counter: u32, complexity: f64, seed: &mut u64) -> Vec<u8> {
     let mut pixels = vec![0u8; width * height * 3];
     let t = counter as usize;
@@ -85,24 +84,13 @@ fn scene(width: usize, height: usize, counter: u32, complexity: f64, seed: &mut 
             pixels[at..at + 3].copy_from_slice(&rgb.map(|value| value as u8));
         }
     }
-    let stamp = unix_ms() as u64 as u16;
-    let rows = 16.min(height);
-    for row in height - rows..height {
-        for x in 0..width {
-            let bit = 15 - (x * 16 / width);
-            let value = if (stamp >> bit) & 1 == 1 { 255 } else { 0 };
-            let at = (row * width + x) * 3;
-            pixels[at..at + 3].fill(value);
-        }
-    }
+    stamp_image(&mut pixels, width);
     pixels
 }
 
-/// A payload of `bytes` starting with the send time (f64 LE unix ms) and `counter` (u32 LE).
+/// [stamped_payload] with a filler that isn't zeros, so nothing on the path can compress the load away.
 fn stamped(bytes: usize, counter: u32) -> Vec<u8> {
-    let mut payload = vec![0u8; bytes.max(12)];
-    payload[0..8].copy_from_slice(&unix_ms().to_le_bytes());
-    payload[8..12].copy_from_slice(&counter.to_le_bytes());
+    let mut payload = stamped_payload(bytes, counter);
     for (i, byte) in payload[12..].iter_mut().enumerate() {
         *byte = (i as u32).wrapping_mul(2654435761).wrapping_add(counter) as u8;
     }
@@ -132,7 +120,7 @@ async fn publish(session: &zenoh::Session, key: &str, congestion: CongestionCont
             }
             if publisher.matching_status().await.is_ok_and(|status| status.matching()) {
                 let payload = make(&current, counter);
-                let _ = publisher.put(payload).await;
+                report(publisher.key_expr().as_str(), publisher.put(payload).await);
                 counter = counter.wrapping_add(1);
             }
         }
@@ -140,31 +128,18 @@ async fn publish(session: &zenoh::Session, key: &str, congestion: CongestionCont
     Ok(())
 }
 
-fn print_line(line: String) {
-    let mut stdout = std::io::stdout().lock();
-    let _ = writeln!(stdout, "{line}");
-    let _ = stdout.flush();
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let listen = std::env::args().nth(1).ok_or_else(|| anyhow::anyhow!("usage: lab_peer <listen endpoint, e.g. tcp/127.0.0.1:17447>"))?;
-    let mut config = zenoh::Config::default();
-    let insert = |config: &mut zenoh::Config, key: &str, value: &str| config.insert_json5(key, value).map_err(|e| anyhow::anyhow!("{key}: {e}"));
-    insert(&mut config, "mode", r#""peer""#)?;
-    insert(&mut config, "listen/endpoints", &serde_json::to_string(&[&listen])?)?;
-    insert(&mut config, "scouting/multicast/enabled", "false")?;
-    let session = zenoh::open(config).await.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let session = zenoh::open(peer_config(&listen)?).await.map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    let defaults = Settings { hz: 0.0, bytes: 0, width: 640, height: 480, complexity: 0.3 };
-    let tf: Shared = Arc::new(Mutex::new(Settings { hz: 50.0, bytes: 400, ..defaults.clone() }));
-    let video: Shared = Arc::new(Mutex::new(Settings { hz: 30.0, ..defaults.clone() }));
-    let global_map: Shared = Arc::new(Mutex::new(Settings { hz: 1.0, bytes: 300_000, ..defaults.clone() }));
+    let (tf, video, global_map): (Shared, Shared, Shared) = Default::default();
 
     publish(&session, "lab/tf", CongestionControl::Block, tf.clone(), |settings, counter| stamped(settings.bytes, counter)).await?;
     publish(&session, "lab/global_map", CongestionControl::Drop, global_map.clone(), |settings, counter| stamped(settings.bytes, counter)).await?;
     let mut seed = 0x9e3779b97f4a7c15u64;
     publish(&session, "lab/video", CongestionControl::Drop, video.clone(), move |settings, counter| {
+        // the stamp needs 16 columns and 16 rows
         let (width, height) = (settings.width.max(16), settings.height.max(16));
         lcm_image(width, height, &scene(width, height, counter, settings.complexity, &mut seed))
     })
@@ -172,15 +147,19 @@ async fn main() -> anyhow::Result<()> {
 
     let _cmd_vel = session
         .declare_subscriber("lab/cmd_vel")
-        .callback(|sample| print_line(format!("CMDVEL {} {}", unix_ms(), String::from_utf8_lossy(&sample.payload().to_bytes()))))
+        .callback(|sample| print_line(&format!("CMDVEL {} {}", unix_ms(), String::from_utf8_lossy(&sample.payload().to_bytes()))))
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    print_line("READY".to_owned());
+    print_line("READY");
     let mut lines = tokio::io::BufReader::new(tokio::io::stdin()).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
+    // stdin closing (Ok(None)) means the lab is gone
+    while let Some(line) = lines.next_line().await? {
         let parts: Vec<&str> = line.split_whitespace().collect();
-        let [command, stream, field, value] = parts[..] else { continue };
+        let ["SET", stream, field, value] = parts[..] else {
+            print_line(&format!("ERROR {line}"));
+            continue;
+        };
         let (Some(settings), Ok(value)) = (
             match stream {
                 "tf" => Some(&tf),
@@ -190,12 +169,9 @@ async fn main() -> anyhow::Result<()> {
             },
             value.parse::<f64>(),
         ) else {
-            print_line(format!("ERROR {line}"));
+            print_line(&format!("ERROR {line}"));
             continue;
         };
-        if command != "SET" {
-            continue;
-        }
         let mut settings = settings.lock().unwrap();
         match field {
             "hz" => settings.hz = value,
@@ -203,9 +179,8 @@ async fn main() -> anyhow::Result<()> {
             "width" => settings.width = value as usize,
             "height" => settings.height = value as usize,
             "complexity" => settings.complexity = value,
-            _ => print_line(format!("ERROR {line}")),
+            _ => print_line(&format!("ERROR {line}")),
         }
     }
-    // stdin closed: the lab is gone
     Ok(())
 }
